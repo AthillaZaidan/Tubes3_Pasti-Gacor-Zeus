@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Judol Detector",
+  "version": "1.0.0",
+  "description": "Detects suspected online gambling keywords with exact, regex, and fuzzy matching.",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Judol Detector",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
