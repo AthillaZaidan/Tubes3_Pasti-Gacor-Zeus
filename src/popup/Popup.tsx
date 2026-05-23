@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { MatchAlgorithm } from '../algorithms/types'
+import type { MatchAlgorithm, OcrSummary } from '../algorithms/types'
 
 type ScanSummary = {
   totalMatches: number
@@ -7,6 +7,7 @@ type ScanSummary = {
   algorithmCounts: Partial<Record<MatchAlgorithm, number>>
   algorithmExecutionTimes: Partial<Record<MatchAlgorithm, number>>
   keywordCounts: Record<string, number>
+  ocr?: OcrSummary
 }
 
 type ScanResponse = {
@@ -16,6 +17,7 @@ type ScanResponse = {
 
 const algorithms: MatchAlgorithm[] = ['RegEx', 'Weighted-Levenshtein']
 const SUMMARY_STORAGE_PREFIX = 'judol:lastScanSummary:'
+const OCR_ENABLED_STORAGE_KEY = 'judol:ocrEnabled'
 const panelClass =
   'rounded-[20px] border border-[#262626] bg-[#141414]/90 shadow-[0_18px_48px_rgba(0,0,0,0.26)]'
 
@@ -60,6 +62,7 @@ export function Popup() {
   const [status, setStatus] = useState('Ready')
   const [isScanning, setIsScanning] = useState(false)
   const [storageKey, setStorageKey] = useState<string | null>(null)
+  const [ocrEnabled, setOcrEnabled] = useState(false)
 
   const topKeywords = useMemo(() => getTopKeywords(summary.keywordCounts), [summary.keywordCounts])
   const maxAlgorithmCount = Math.max(
@@ -118,6 +121,15 @@ export function Popup() {
     void restoreLastSummary()
   }, [getActiveTabStorageKey])
 
+  useEffect(() => {
+    async function restoreOcrPreference() {
+      const stored = await chrome.storage.local.get([OCR_ENABLED_STORAGE_KEY])
+      setOcrEnabled(stored[OCR_ENABLED_STORAGE_KEY] === true)
+    }
+
+    void restoreOcrPreference()
+  }, [])
+
   async function injectContentScript(tabId: number) {
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -142,7 +154,7 @@ export function Popup() {
     setStatus('Scanning')
 
     try {
-      const response = await sendCommand({ type: 'JUDOL_SCAN' })
+      const response = await sendCommand({ type: 'JUDOL_SCAN', includeOcr: ocrEnabled })
 
       if (isScanResponse(response) && response.summary) {
         setSummary(response.summary)
@@ -166,6 +178,12 @@ export function Popup() {
     } catch {
       setStatus('Blur failed')
     }
+  }
+
+  async function handleOcrChange(enabled: boolean) {
+    setOcrEnabled(enabled)
+    await chrome.storage.local.set({ [OCR_ENABLED_STORAGE_KEY]: enabled })
+    setStatus(enabled ? 'OCR on' : 'OCR off')
   }
 
   return (
@@ -282,14 +300,31 @@ export function Popup() {
             onChange={(event) => handleBlurChange(event.currentTarget.checked)}
           />
         </label>
-        <label className="flex min-h-12 items-center justify-between gap-3 bg-[#141414] px-4 text-sm font-bold opacity-60">
+        <label className="flex min-h-12 items-center justify-between gap-3 bg-[#141414] px-4 text-sm font-bold">
           <span>OCR image scan</span>
           <input
             className="h-[22px] w-[38px] accent-[#0099ff] outline-offset-3 focus-visible:outline-2 focus-visible:outline-[#0099ff]"
             type="checkbox"
-            disabled
+            checked={ocrEnabled}
+            onChange={(event) => void handleOcrChange(event.currentTarget.checked)}
           />
         </label>
+        {summary.ocr ? (
+          <div className="grid gap-1 bg-[#141414] px-4 py-3 text-xs text-[#999999]">
+            <div className="flex items-center justify-between gap-3">
+              <span>OCR scanned</span>
+              <strong className="text-white">
+                {summary.ocr.scannedImages} images · {summary.ocr.executionTimeMs.toFixed(0)} ms
+              </strong>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span>OCR detected</span>
+              <strong className="text-white">
+                {summary.ocr.matchedImages} matched · {summary.ocr.skippedImages} skipped
+              </strong>
+            </div>
+          </div>
+        ) : null}
       </section>
     </main>
   )
