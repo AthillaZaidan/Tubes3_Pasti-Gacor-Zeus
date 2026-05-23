@@ -1,3 +1,6 @@
+import keywordText from '../../keywords/keyword.txt?raw'
+import type { AlgorithmResult, DetectionMatch } from '../algorithms/types'
+import { parseKeywordText, scanTextForJudol } from './scanner'
 import contentStyles from '../styles/content.css?inline'
 
 type PopupCommand = {
@@ -8,21 +11,16 @@ type PopupCommand = {
 const STYLE_ID = 'judol-detector-content-styles'
 const TOOLTIP_ID = 'judol-detector-tooltip'
 const HIGHLIGHT_SELECTOR = '.judol-highlight'
+const keywords = parseKeywordText(keywordText)
 
-const demoDetections = [
-  {
-    text: 'MAXWIN234',
-    algorithm: 'RegEx',
-    count: 6,
-    executionTimeMs: 1.2,
-  },
-  {
-    text: 'H0KI88',
-    algorithm: 'Weighted Levenshtein',
-    count: 4,
-    executionTimeMs: 2.4,
-  },
-]
+function ensureContentStyles() {
+  if (document.getElementById(STYLE_ID)) return
+
+  const style = document.createElement('style')
+  style.id = STYLE_ID
+  style.textContent = contentStyles
+  document.documentElement.append(style)
+}
 
 function shouldSkipTag(tagName: string) {
   return (
@@ -32,34 +30,6 @@ function shouldSkipTag(tagName: string) {
     tagName === 'TEXTAREA' ||
     tagName === 'INPUT'
   )
-}
-
-function findTextIndex(source: string, pattern: string) {
-  if (pattern.length === 0 || source.length < pattern.length) return -1
-
-  for (let start = 0; start <= source.length - pattern.length; start += 1) {
-    let matched = true
-
-    for (let offset = 0; offset < pattern.length; offset += 1) {
-      if (source[start + offset] !== pattern[offset]) {
-        matched = false
-        break
-      }
-    }
-
-    if (matched) return start
-  }
-
-  return -1
-}
-
-function ensureContentStyles() {
-  if (document.getElementById(STYLE_ID)) return
-
-  const style = document.createElement('style')
-  style.id = STYLE_ID
-  style.textContent = contentStyles
-  document.documentElement.append(style)
 }
 
 function createTooltip() {
@@ -78,11 +48,20 @@ function createTooltip() {
 
 function showTooltip(target: HTMLElement, event: MouseEvent) {
   const tooltip = createTooltip()
-  tooltip.innerHTML = `
-    <strong>${target.dataset.keyword ?? 'Unknown keyword'}</strong>
-    <span>${target.dataset.algorithm ?? 'Unknown algorithm'} · ${target.dataset.count ?? '0'} matches</span>
-    <em>${target.dataset.time ?? '0 ms'}</em>
-  `
+  tooltip.replaceChildren()
+
+  const keyword = document.createElement('strong')
+  keyword.textContent = target.dataset.keyword ?? 'Unknown keyword'
+
+  const metadata = document.createElement('span')
+  metadata.textContent = `${target.dataset.algorithm ?? 'Unknown algorithm'} · ${
+    target.dataset.count ?? '0'
+  } matches`
+
+  const time = document.createElement('em')
+  time.textContent = target.dataset.time ?? '0 ms'
+
+  tooltip.append(keyword, metadata, time)
   tooltip.hidden = false
   tooltip.style.left = `${Math.min(event.clientX + 14, window.innerWidth - 300)}px`
   tooltip.style.top = `${Math.min(event.clientY + 14, window.innerHeight - 120)}px`
@@ -100,51 +79,102 @@ function clearHighlights() {
   hideTooltip()
 }
 
-function applyDemoHighlights() {
-  ensureContentStyles()
-  clearHighlights()
-
+function getVisibleTextNodes() {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement
-      if (!parent) return NodeFilter.FILTER_REJECT
-      if (shouldSkipTag(parent.tagName)) return NodeFilter.FILTER_REJECT
+      const text = node.textContent
 
-      const text = node.textContent ?? ''
-      const hasDetection = demoDetections.some((item) => findTextIndex(text, item.text) >= 0)
-      return hasDetection ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+      if (!parent || !text || text.trim().length === 0) return NodeFilter.FILTER_REJECT
+      if (shouldSkipTag(parent.tagName)) return NodeFilter.FILTER_REJECT
+      if (parent.closest(HIGHLIGHT_SELECTOR)) return NodeFilter.FILTER_REJECT
+
+      return NodeFilter.FILTER_ACCEPT
     },
   })
-
   const nodes: Text[] = []
-  while (walker.nextNode()) nodes.push(walker.currentNode as Text)
 
-  nodes.forEach((node) => {
-    let currentNode: Text | null = node
+  while (walker.nextNode()) {
+    nodes.push(walker.currentNode as Text)
+  }
 
-    demoDetections.forEach((detection) => {
-      if (!currentNode) return
-      const text = currentNode.textContent ?? ''
-      const index = findTextIndex(text, detection.text)
-      if (index < 0) return
+  return nodes
+}
 
-      const range = document.createRange()
-      range.setStart(currentNode, index)
-      range.setEnd(currentNode, index + detection.text.length)
+function getResultForMatch(results: AlgorithmResult[], match: DetectionMatch) {
+  return results.find((result) => result.algorithm === match.algorithm)
+}
 
-      const highlight = document.createElement('span')
-      highlight.className = 'judol-highlight'
-      highlight.dataset.keyword = detection.text
-      highlight.dataset.algorithm = detection.algorithm
-      highlight.dataset.count = String(detection.count)
-      highlight.dataset.time = `${detection.executionTimeMs} ms`
-      highlight.addEventListener('mousemove', (event) => showTooltip(highlight, event))
-      highlight.addEventListener('mouseleave', hideTooltip)
+function createHighlight(match: DetectionMatch, results: AlgorithmResult[]) {
+  const highlight = document.createElement('span')
+  const algorithmResult = getResultForMatch(results, match)
 
-      range.surroundContents(highlight)
-      currentNode = highlight.nextSibling instanceof Text ? highlight.nextSibling : null
-    })
-  })
+  highlight.className = 'judol-highlight'
+  highlight.textContent = match.matchedText
+  highlight.dataset.keyword = match.keyword
+  highlight.dataset.algorithm = match.algorithm
+  highlight.dataset.count = String(algorithmResult?.count ?? 1)
+  highlight.dataset.time = `${(algorithmResult?.executionTimeMs ?? 0).toFixed(2)} ms`
+  highlight.addEventListener('mousemove', (event) => showTooltip(highlight, event))
+  highlight.addEventListener('mouseleave', hideTooltip)
+
+  return highlight
+}
+
+function getNonOverlappingMatches(matches: DetectionMatch[]) {
+  const selected: DetectionMatch[] = []
+  let cursor = 0
+
+  for (const match of matches) {
+    if (match.startIndex < cursor) continue
+    selected.push(match)
+    cursor = match.endIndex
+  }
+
+  return selected
+}
+
+function replaceTextNodeWithHighlights(
+  node: Text,
+  text: string,
+  matches: DetectionMatch[],
+  results: AlgorithmResult[],
+) {
+  const fragment = document.createDocumentFragment()
+  let cursor = 0
+
+  for (const match of matches) {
+    if (cursor < match.startIndex) {
+      fragment.append(document.createTextNode(text.slice(cursor, match.startIndex)))
+    }
+
+    fragment.append(createHighlight(match, results))
+    cursor = match.endIndex
+  }
+
+  if (cursor < text.length) {
+    fragment.append(document.createTextNode(text.slice(cursor)))
+  }
+
+  node.replaceWith(fragment)
+}
+
+function highlightTextNode(node: Text) {
+  const text = node.textContent ?? ''
+  const scanResult = scanTextForJudol(text, keywords)
+  const matches = getNonOverlappingMatches(scanResult.matches)
+
+  if (matches.length === 0) return
+  replaceTextNodeWithHighlights(node, text, matches, scanResult.results)
+}
+
+function scanPage() {
+  ensureContentStyles()
+  clearHighlights()
+
+  for (const node of getVisibleTextNodes()) {
+    highlightTextNode(node)
+  }
 }
 
 function setBlur(enabled: boolean) {
@@ -153,17 +183,17 @@ function setBlur(enabled: boolean) {
   })
 }
 
-ensureContentStyles()
-
 function isPopupCommand(message: unknown): message is PopupCommand {
   if (!message || typeof message !== 'object') return false
   return 'type' in message
 }
 
+ensureContentStyles()
+
 chrome.runtime?.onMessage?.addListener((message) => {
   if (!isPopupCommand(message)) return
 
-  if (message.type === 'JUDOL_SCAN') applyDemoHighlights()
+  if (message.type === 'JUDOL_SCAN') scanPage()
   if (message.type === 'JUDOL_CLEAR') clearHighlights()
   if (message.type === 'JUDOL_SET_BLUR') setBlur(Boolean(message.blur))
 })
