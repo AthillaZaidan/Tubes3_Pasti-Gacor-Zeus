@@ -4,6 +4,7 @@ import { findWeightedLevenshteinMatches } from '../algorithms/weightedLevenshtei
 
 export type ScanTextOptions = {
   fuzzyThreshold?: number
+  includeExactKeywordMatches?: boolean
 }
 
 export type ScanTextResult = {
@@ -57,6 +58,7 @@ export function scanTextForJudol(
   const regexResult = findJudolPatternMatches(text)
   const weightedResult = findWeightedLevenshteinMatches(text, normalizedKeywords, {
     threshold: options.fuzzyThreshold,
+    includeExact: options.includeExactKeywordMatches,
   })
   const matches = dedupeMatches([...regexResult.matches, ...weightedResult.matches])
   const results = [regexResult, weightedResult]

@@ -1,33 +1,109 @@
-const algorithmStats = [
-  { name: 'KMP', matches: 9, time: '0.8 ms', widthClass: 'w-[86%]' },
-  { name: 'Boyer-Moore', matches: 7, time: '0.6 ms', widthClass: 'w-[72%]' },
-  { name: 'RegEx', matches: 14, time: '1.2 ms', widthClass: 'w-full' },
-  { name: 'Weighted', matches: 4, time: '2.4 ms', widthClass: 'w-[46%]' },
-]
+import { useMemo, useState } from 'react'
+import type { MatchAlgorithm } from '../algorithms/types'
 
-const keywordStats = [
-  ['MAXWIN234', 6],
-  ['GACOR99', 5],
-  ['H0KI88', 4],
-  ['SLOT99', 3],
-] as const
+type ScanSummary = {
+  totalMatches: number
+  executionTimeMs: number
+  algorithmCounts: Partial<Record<MatchAlgorithm, number>>
+  algorithmExecutionTimes: Partial<Record<MatchAlgorithm, number>>
+  keywordCounts: Record<string, number>
+}
 
+type ScanResponse = {
+  ok?: boolean
+  summary?: ScanSummary
+}
+
+const algorithms: MatchAlgorithm[] = ['RegEx', 'Weighted-Levenshtein']
 const panelClass =
   'rounded-[20px] border border-[#262626] bg-[#141414]/90 shadow-[0_18px_48px_rgba(0,0,0,0.26)]'
 
+function emptySummary(): ScanSummary {
+  return {
+    totalMatches: 0,
+    executionTimeMs: 0,
+    algorithmCounts: {},
+    algorithmExecutionTimes: {},
+    keywordCounts: {},
+  }
+}
+
+function isScanResponse(value: unknown): value is ScanResponse {
+  return Boolean(value && typeof value === 'object' && 'ok' in value)
+}
+
+function formatAlgorithmName(algorithm: MatchAlgorithm) {
+  return algorithm === 'Weighted-Levenshtein' ? 'Weighted' : algorithm
+}
+
+function getTopKeywords(keywordCounts: Record<string, number>) {
+  return Object.entries(keywordCounts)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 5)
+}
+
 export function Popup() {
-  async function sendCommand(message: Record<string, unknown>) {
+  const [summary, setSummary] = useState<ScanSummary>(emptySummary)
+  const [status, setStatus] = useState('Ready')
+  const [isScanning, setIsScanning] = useState(false)
+
+  const topKeywords = useMemo(() => getTopKeywords(summary.keywordCounts), [summary.keywordCounts])
+  const maxAlgorithmCount = Math.max(
+    1,
+    ...algorithms.map((algorithm) => summary.algorithmCounts[algorithm] ?? 0),
+  )
+
+  async function getActiveTabId() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab.id) return
-    await chrome.tabs.sendMessage(tab.id, message)
+    return tab.id
+  }
+
+  async function injectContentScript(tabId: number) {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content.js'],
+    })
+  }
+
+  async function sendCommand(message: Record<string, unknown>) {
+    const tabId = await getActiveTabId()
+    if (!tabId) throw new Error('No active tab')
+
+    try {
+      return await chrome.tabs.sendMessage(tabId, message)
+    } catch {
+      await injectContentScript(tabId)
+      return chrome.tabs.sendMessage(tabId, message)
+    }
   }
 
   async function handleRescan() {
-    await sendCommand({ type: 'JUDOL_SCAN' })
+    setIsScanning(true)
+    setStatus('Scanning')
+
+    try {
+      const response = await sendCommand({ type: 'JUDOL_SCAN' })
+
+      if (isScanResponse(response) && response.summary) {
+        setSummary(response.summary)
+        setStatus(response.summary.totalMatches > 0 ? 'Detected' : 'Clean')
+      } else {
+        setStatus('No response')
+      }
+    } catch {
+      setStatus('Scan failed')
+    } finally {
+      setIsScanning(false)
+    }
   }
 
   async function handleBlurChange(enabled: boolean) {
-    await sendCommand({ type: 'JUDOL_SET_BLUR', blur: enabled })
+    try {
+      await sendCommand({ type: 'JUDOL_SET_BLUR', blur: enabled })
+      setStatus(enabled ? 'Blur on' : 'Blur off')
+    } catch {
+      setStatus('Blur failed')
+    }
   }
 
   return (
@@ -42,18 +118,20 @@ export function Popup() {
           </h1>
         </div>
         <span className="rounded-full bg-[#22c55e] px-[11px] py-2 text-xs font-extrabold text-[#061b0d]">
-          Active
+          {status}
         </span>
       </header>
 
       <section className="grid grid-cols-2 gap-2.5" aria-label="Scan summary">
         <article className={`${panelClass} grid min-h-[92px] gap-2 p-4`}>
-          <span className="text-xs leading-[1.2] text-[#999999]">Total keywords</span>
-          <strong className="text-[34px] leading-[0.95]">27</strong>
+          <span className="text-xs leading-[1.2] text-[#999999]">Total matches</span>
+          <strong className="text-[34px] leading-[0.95]">{summary.totalMatches}</strong>
         </article>
         <article className={`${panelClass} grid min-h-[92px] gap-2 p-4`}>
           <span className="text-xs leading-[1.2] text-[#999999]">Execution</span>
-          <strong className="text-[34px] leading-[0.95]">38 ms</strong>
+          <strong className="text-[34px] leading-[0.95]">
+            {summary.executionTimeMs.toFixed(0)} ms
+          </strong>
         </article>
       </section>
 
@@ -65,31 +143,39 @@ export function Popup() {
           <button
             type="button"
             onClick={handleRescan}
-            className="min-h-[34px] cursor-pointer rounded-full border-0 bg-white px-[13px] text-[13px] font-bold text-black outline-offset-3 focus-visible:outline-2 focus-visible:outline-[#0099ff]"
+            disabled={isScanning}
+            className="min-h-[34px] cursor-pointer rounded-full border-0 bg-white px-[13px] text-[13px] font-bold text-black outline-offset-3 focus-visible:outline-2 focus-visible:outline-[#0099ff] disabled:cursor-wait disabled:opacity-60"
           >
-            Rescan
+            {isScanning ? 'Scanning' : 'Rescan'}
           </button>
         </div>
 
         <div className="grid gap-2.5">
-          {algorithmStats.map((item) => (
-            <div className="grid gap-2" key={item.name}>
-              <div className="flex items-baseline justify-between gap-3">
-                <strong className="text-sm">{item.name}</strong>
-                <span className="text-xs leading-[1.2] text-[#999999]">
-                  {item.matches} matches · {item.time}
-                </span>
-              </div>
-              <div
-                className="relative h-2.5 overflow-hidden rounded-full bg-[#1c1c1c]"
-                aria-hidden="true"
-              >
+          {algorithms.map((algorithm) => {
+            const count = summary.algorithmCounts[algorithm] ?? 0
+            const time = summary.algorithmExecutionTimes[algorithm] ?? 0
+            const width = `${Math.max(4, (count / maxAlgorithmCount) * 100)}%`
+
+            return (
+              <div className="grid gap-2" key={algorithm}>
+                <div className="flex items-baseline justify-between gap-3">
+                  <strong className="text-sm">{formatAlgorithmName(algorithm)}</strong>
+                  <span className="text-xs leading-[1.2] text-[#999999]">
+                    {count} matches · {time.toFixed(2)} ms
+                  </span>
+                </div>
                 <div
-                  className={`h-full rounded-full bg-linear-to-r from-[#6a4cf5] to-[#ff5577] ${item.widthClass}`}
-                />
+                  className="relative h-2.5 overflow-hidden rounded-full bg-[#1c1c1c]"
+                  aria-hidden="true"
+                >
+                  <div
+                    className="h-full rounded-full bg-linear-to-r from-[#6a4cf5] to-[#ff5577]"
+                    style={{ width }}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </section>
 
@@ -102,17 +188,23 @@ export function Popup() {
         </div>
 
         <div className="grid gap-2.5">
-          {keywordStats.map(([keyword, count]) => (
-            <div
-              className="flex min-h-[38px] items-center justify-between gap-3 rounded-xl bg-[#1c1c1c] px-3"
-              key={keyword}
-            >
-              <span className="text-[13px] font-bold">{keyword}</span>
-              <strong className="grid size-7 place-items-center rounded-full bg-white text-xs text-black">
-                {count}
-              </strong>
-            </div>
-          ))}
+          {topKeywords.length === 0 ? (
+            <p className="m-0 rounded-xl bg-[#1c1c1c] px-3 py-3 text-[13px] text-[#999999]">
+              Click Rescan to collect page matches.
+            </p>
+          ) : (
+            topKeywords.map(([keyword, count]) => (
+              <div
+                className="flex min-h-[38px] items-center justify-between gap-3 rounded-xl bg-[#1c1c1c] px-3"
+                key={keyword}
+              >
+                <span className="text-[13px] font-bold">{keyword}</span>
+                <strong className="grid size-7 place-items-center rounded-full bg-white text-xs text-black">
+                  {count}
+                </strong>
+              </div>
+            ))
+          )}
         </div>
       </section>
 
@@ -128,11 +220,12 @@ export function Popup() {
             onChange={(event) => handleBlurChange(event.currentTarget.checked)}
           />
         </label>
-        <label className="flex min-h-12 items-center justify-between gap-3 bg-[#141414] px-4 text-sm font-bold">
+        <label className="flex min-h-12 items-center justify-between gap-3 bg-[#141414] px-4 text-sm font-bold opacity-60">
           <span>OCR image scan</span>
           <input
             className="h-[22px] w-[38px] accent-[#0099ff] outline-offset-3 focus-visible:outline-2 focus-visible:outline-[#0099ff]"
             type="checkbox"
+            disabled
           />
         </label>
       </section>

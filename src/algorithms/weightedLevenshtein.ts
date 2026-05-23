@@ -2,6 +2,7 @@ import type { AlgorithmResult, DetectionMatch } from './types'
 
 type WeightedLevenshteinOptions = {
   threshold?: number
+  includeExact?: boolean
   visualSubstitutionCost?: number
   substitutionCost?: number
   insertionCost?: number
@@ -200,7 +201,8 @@ export function findWeightedLevenshteinMatches(
       if (!isLengthComparable(keyword, candidate.text)) continue
 
       const result = calculateWeightedLevenshtein(keyword, candidate.text, options)
-      if (result.similarity < threshold || result.similarity === 1) continue
+      if (result.similarity < threshold) continue
+      if (result.similarity === 1 && !options.includeExact) continue
 
       matches.push({
         keyword,

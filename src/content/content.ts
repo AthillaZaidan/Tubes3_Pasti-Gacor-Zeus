@@ -1,11 +1,19 @@
 import keywordText from '../../keywords/keyword.txt?raw'
-import type { AlgorithmResult, DetectionMatch } from '../algorithms/types'
+import type { AlgorithmResult, DetectionMatch, MatchAlgorithm } from '../algorithms/types'
 import { parseKeywordText, scanTextForJudol } from './scanner'
 import contentStyles from '../styles/content.css?inline'
 
 type PopupCommand = {
   type: 'JUDOL_SCAN' | 'JUDOL_CLEAR' | 'JUDOL_SET_BLUR'
   blur?: boolean
+}
+
+type ScanSummary = {
+  totalMatches: number
+  executionTimeMs: number
+  algorithmCounts: Partial<Record<MatchAlgorithm, number>>
+  algorithmExecutionTimes: Partial<Record<MatchAlgorithm, number>>
+  keywordCounts: Record<string, number>
 }
 
 const STYLE_ID = 'judol-detector-content-styles'
@@ -159,11 +167,39 @@ function replaceTextNodeWithHighlights(
   node.replaceWith(fragment)
 }
 
-function highlightTextNode(node: Text) {
+function emptyScanSummary(): ScanSummary {
+  return {
+    totalMatches: 0,
+    executionTimeMs: 0,
+    algorithmCounts: {},
+    algorithmExecutionTimes: {},
+    keywordCounts: {},
+  }
+}
+
+function mergeScanSummary(summary: ScanSummary, result: ReturnType<typeof scanTextForJudol>) {
+  summary.totalMatches += result.totalMatches
+  summary.executionTimeMs += result.executionTimeMs
+
+  for (const algorithmResult of result.results) {
+    summary.algorithmCounts[algorithmResult.algorithm] =
+      (summary.algorithmCounts[algorithmResult.algorithm] ?? 0) + algorithmResult.count
+    summary.algorithmExecutionTimes[algorithmResult.algorithm] =
+      (summary.algorithmExecutionTimes[algorithmResult.algorithm] ?? 0) +
+      algorithmResult.executionTimeMs
+  }
+
+  for (const match of result.matches) {
+    summary.keywordCounts[match.keyword] = (summary.keywordCounts[match.keyword] ?? 0) + 1
+  }
+}
+
+function highlightTextNode(node: Text, summary: ScanSummary) {
   const text = node.textContent ?? ''
-  const scanResult = scanTextForJudol(text, keywords)
+  const scanResult = scanTextForJudol(text, keywords, { includeExactKeywordMatches: true })
   const matches = getNonOverlappingMatches(scanResult.matches)
 
+  mergeScanSummary(summary, scanResult)
   if (matches.length === 0) return
   replaceTextNodeWithHighlights(node, text, matches, scanResult.results)
 }
@@ -172,9 +208,13 @@ function scanPage() {
   ensureContentStyles()
   clearHighlights()
 
+  const summary = emptyScanSummary()
+
   for (const node of getVisibleTextNodes()) {
-    highlightTextNode(node)
+    highlightTextNode(node, summary)
   }
+
+  return summary
 }
 
 function setBlur(enabled: boolean) {
@@ -190,10 +230,25 @@ function isPopupCommand(message: unknown): message is PopupCommand {
 
 ensureContentStyles()
 
-chrome.runtime?.onMessage?.addListener((message) => {
-  if (!isPopupCommand(message)) return
+chrome.runtime?.onMessage?.addListener((message, _sender, sendResponse) => {
+  if (!isPopupCommand(message)) return false
 
-  if (message.type === 'JUDOL_SCAN') scanPage()
-  if (message.type === 'JUDOL_CLEAR') clearHighlights()
-  if (message.type === 'JUDOL_SET_BLUR') setBlur(Boolean(message.blur))
+  if (message.type === 'JUDOL_SCAN') {
+    sendResponse({ ok: true, summary: scanPage() })
+    return true
+  }
+
+  if (message.type === 'JUDOL_CLEAR') {
+    clearHighlights()
+    sendResponse({ ok: true, summary: emptyScanSummary() })
+    return true
+  }
+
+  if (message.type === 'JUDOL_SET_BLUR') {
+    setBlur(Boolean(message.blur))
+    sendResponse({ ok: true })
+    return true
+  }
+
+  return false
 })

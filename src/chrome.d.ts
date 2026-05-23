@@ -1,7 +1,14 @@
 declare const chrome: {
-  runtime?: {
+  runtime: {
+    getURL: (path: string) => string
     onMessage?: {
-      addListener: (callback: (message: unknown) => void) => void
+      addListener: (
+        callback: (
+          message: unknown,
+          sender: unknown,
+          sendResponse: (response?: unknown) => void,
+        ) => boolean | void,
+      ) => void
     }
   }
   tabs: {
@@ -10,5 +17,11 @@ declare const chrome: {
       currentWindow: boolean
     }) => Promise<Array<{ id?: number }>>
     sendMessage: (tabId: number, message: Record<string, unknown>) => Promise<unknown>
+  }
+  scripting: {
+    executeScript: (injection: {
+      target: { tabId: number }
+      files: string[]
+    }) => Promise<unknown>
   }
 }
