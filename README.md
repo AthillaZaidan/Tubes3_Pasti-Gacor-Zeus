@@ -19,7 +19,7 @@ The extension is designed around four required detection strategies:
 - RegEx for `<word><number>` patterns
 - Weighted Levenshtein Distance for visually modified or typo-like text
 
-It also supports an optional bonus track for additional matching engines, censorship mode, OCR-based image scanning, and a public demo video.
+The same product scope also covers additional matching engines, censorship mode, OCR-based image scanning, and a public demo video.
 
 ## Features
 
@@ -38,10 +38,10 @@ It also supports an optional bonus track for additional matching engines, censor
 - Popup statistics by algorithm and keyword
 - Per-site popup state persistence
 - Rescan support with cleanup of old highlights
-- Optional blur mode for detected text
-- Optional OCR detection for text embedded inside images
-- Optional Aho-Corasick multi-pattern matching
-- Optional Rabin-Karp rolling-hash matching
+- Blur mode for detected text
+- OCR detection for text embedded inside images
+- Aho-Corasick multi-pattern matching
+- Rabin-Karp rolling-hash matching
 
 ## Architecture
 
@@ -69,8 +69,8 @@ Algorithms
   -> Boyer-Moore
   -> RegEx
   -> Weighted Levenshtein
-  -> Aho-Corasick (bonus)
-  -> Rabin-Karp (bonus)
+  -> Aho-Corasick
+  -> Rabin-Karp
 ```
 
 ## Detection Pipeline
@@ -81,11 +81,11 @@ visible DOM text
 -> exact matching with KMP and Boyer-Moore
 -> pattern matching with RegEx
 -> fuzzy matching with Weighted Levenshtein
--> optional bonus matching with Aho-Corasick and Rabin-Karp
--> optional OCR scan for image text
+-> additional matching with Aho-Corasick and Rabin-Karp
+-> OCR scan for image text
 -> result deduplication
 -> DOM highlight
--> optional blur/censorship
+-> blur/censorship
 -> popup statistics
 ```
 
@@ -98,6 +98,7 @@ visible DOM text
 | Styling | Tailwind CSS |
 | Build tool | Vite |
 | Extension platform | Chromium Manifest V3 |
+| OCR | Tesseract.js |
 | Package manager | Bun |
 
 ## Project Structure
@@ -208,6 +209,7 @@ The popup displays:
 - execution time per algorithm
 - top matched keywords
 - scan status
+- OCR scanned, matched, and skipped image counts
 
 ### Blur Detected Text
 
@@ -215,7 +217,7 @@ Enable Blur detected text to visually obscure highlighted content without removi
 
 ### OCR Image Scan
 
-Enable OCR scan to extract text from page images, run the same matching pipeline on extracted text, and blur or replace images that contain detected gambling terms.
+Enable OCR scan to extract text from visible page images, run the same matching pipeline on extracted text, and highlight or blur images that contain detected gambling terms.
 
 ### Per-Site State
 
@@ -288,7 +290,7 @@ Visual substitution groups:
 | G | `G`, `6`, `9` |
 | T | `T`, `7` |
 
-### Aho-Corasick Bonus
+### Aho-Corasick
 
 Aho-Corasick provides efficient multi-pattern matching for large keyword sets. It builds a trie with failure links, then scans page text once to detect many keywords.
 
@@ -300,7 +302,7 @@ Expected output:
 - match count
 - execution time
 
-### Rabin-Karp Bonus
+### Rabin-Karp
 
 Rabin-Karp provides rolling-hash-based string matching. It can be used as an alternative exact matcher for keywords from `keywords/keyword.txt`.
 
@@ -312,7 +314,7 @@ Expected output:
 - hash comparison count
 - execution time
 
-## Bonus Features
+## Advanced Features
 
 ### Censorship / Blur Text
 
@@ -334,7 +336,7 @@ Expected behavior:
 - scan visible page images
 - extract text with Tesseract.js
 - detect gambling keywords inside images
-- blur or replace detected images
+- highlight or blur detected images
 - report OCR results in popup statistics
 
 ### Demo Video
@@ -347,7 +349,7 @@ The demo video should show:
 - tooltip on hover
 - popup statistics
 - blur toggle
-- OCR behavior if implemented
+- OCR image detection behavior
 - explanation of algorithms and performance comparison
 
 ## Keyword List
@@ -371,7 +373,7 @@ slot
 gacor
 maxwin
 slot online
-bonus new member
+new member
 ```
 
 ## Development
@@ -413,12 +415,10 @@ Core completion:
 - automated algorithm tests
 - final report documentation
 
-Bonus:
+Extended capabilities:
 
 - Aho-Corasick matcher
 - Rabin-Karp matcher
-- censorship / blur mode
-- OCR image detection with Tesseract.js
 - demo video
 
 ## Authors
