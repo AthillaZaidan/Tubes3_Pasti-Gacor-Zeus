@@ -16,6 +16,16 @@
   filter: blur(3px);
 }
 
+.judol-ocr-image {
+  outline: 3px solid rgba(0, 153, 255, 0.78) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 6px rgba(0, 153, 255, 0.16) !important;
+}
+
+.judol-ocr-image[data-judol-blur="true"] {
+  filter: blur(8px) saturate(0.8) !important;
+}
+
 .judol-tooltip {
   position: fixed;
   z-index: 2147483647;

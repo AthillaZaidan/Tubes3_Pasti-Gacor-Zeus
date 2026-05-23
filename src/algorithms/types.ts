@@ -23,3 +23,11 @@ export type AlgorithmResult = {
   executionTimeMs: number
   comparisons?: number
 }
+
+export type OcrSummary = {
+  enabled: boolean
+  scannedImages: number
+  matchedImages: number
+  skippedImages: number
+  executionTimeMs: number
+}
