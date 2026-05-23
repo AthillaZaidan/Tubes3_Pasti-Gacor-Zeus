@@ -159,8 +159,8 @@ function getKeywordTokenCount(keyword: string) {
   return Math.max(count, 1)
 }
 
-function getCandidateWindows(text: string, tokenCount: number) {
-  const tokens = getCandidateTokens(text)
+function getCandidateWindowsFromTokens(text: string, tokens: CandidateToken[], tokenCount: number) {
+  if (tokens.length === 0) return []
 
   if (tokenCount === 1) return tokens
 
@@ -193,9 +193,20 @@ export function findWeightedLevenshteinMatches(
   const startedAt = nowMs()
   const threshold = options.threshold ?? DEFAULT_THRESHOLD
   const matches: DetectionMatch[] = []
+  const tokens = getCandidateTokens(text)
+  const candidateCache = new Map<number, CandidateToken[]>()
+
+  function getCachedCandidates(tokenCount: number) {
+    const cached = candidateCache.get(tokenCount)
+    if (cached) return cached
+
+    const candidates = getCandidateWindowsFromTokens(text, tokens, tokenCount)
+    candidateCache.set(tokenCount, candidates)
+    return candidates
+  }
 
   for (const keyword of keywords) {
-    const candidates = getCandidateWindows(text, getKeywordTokenCount(keyword))
+    const candidates = getCachedCandidates(getKeywordTokenCount(keyword))
 
     for (const candidate of candidates) {
       if (!isLengthComparable(keyword, candidate.text)) continue
