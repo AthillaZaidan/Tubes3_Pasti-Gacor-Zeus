@@ -1,11 +1,18 @@
 import keywordText from '../../keywords/keyword.txt?raw'
-import type { AlgorithmResult, DetectionMatch, MatchAlgorithm } from '../algorithms/types'
+import type {
+  AlgorithmResult,
+  DetectionMatch,
+  MatchAlgorithm,
+  OcrSummary,
+} from '../algorithms/types'
 import { parseKeywordText, scanTextForJudol } from './scanner'
 import contentStyles from '../styles/content.css?inline'
+import { scanVisibleImagesForJudol } from '../ocr/imageScanner'
 
 type PopupCommand = {
   type: 'JUDOL_SCAN' | 'JUDOL_CLEAR' | 'JUDOL_SET_BLUR'
   blur?: boolean
+  includeOcr?: boolean
 }
 
 type ScanSummary = {
@@ -14,12 +21,15 @@ type ScanSummary = {
   algorithmCounts: Partial<Record<MatchAlgorithm, number>>
   algorithmExecutionTimes: Partial<Record<MatchAlgorithm, number>>
   keywordCounts: Record<string, number>
+  ocr?: OcrSummary
 }
 
 const STYLE_ID = 'judol-detector-content-styles'
 const TOOLTIP_ID = 'judol-detector-tooltip'
 const HIGHLIGHT_SELECTOR = '.judol-highlight'
+const OCR_IMAGE_SELECTOR = '.judol-ocr-image'
 const keywords = parseKeywordText(keywordText)
+let currentBlurEnabled = false
 
 function ensureContentStyles() {
   if (document.getElementById(STYLE_ID)) return
@@ -83,6 +93,14 @@ function hideTooltip() {
 function clearHighlights() {
   document.querySelectorAll<HTMLElement>(HIGHLIGHT_SELECTOR).forEach((node) => {
     node.replaceWith(document.createTextNode(node.textContent ?? ''))
+  })
+  document.querySelectorAll<HTMLElement>(OCR_IMAGE_SELECTOR).forEach((node) => {
+    node.classList.remove('judol-ocr-image')
+    delete node.dataset.keyword
+    delete node.dataset.algorithm
+    delete node.dataset.count
+    delete node.dataset.time
+    delete node.dataset.judolBlur
   })
   hideTooltip()
 }
@@ -194,6 +212,26 @@ function mergeScanSummary(summary: ScanSummary, result: ReturnType<typeof scanTe
   }
 }
 
+function markOcrImage(
+  image: HTMLImageElement,
+  result: ReturnType<typeof scanTextForJudol>,
+  blurEnabled: boolean,
+) {
+  const firstMatch = result.matches[0]
+  const firstResult = result.results.find((algorithmResult) => {
+    return algorithmResult.algorithm === firstMatch?.algorithm
+  })
+
+  image.classList.add('judol-ocr-image')
+  image.dataset.keyword = firstMatch?.keyword ?? 'OCR match'
+  image.dataset.algorithm = `OCR + ${firstMatch?.algorithm ?? 'scanner'}`
+  image.dataset.count = String(result.totalMatches)
+  image.dataset.time = `${(firstResult?.executionTimeMs ?? result.executionTimeMs).toFixed(2)} ms`
+  image.dataset.judolBlur = String(blurEnabled)
+  image.onmousemove = (event) => showTooltip(image, event)
+  image.onmouseleave = hideTooltip
+}
+
 function highlightTextNode(node: Text, summary: ScanSummary) {
   const text = node.textContent ?? ''
   const scanResult = scanTextForJudol(text, keywords, { includeExactKeywordMatches: true })
@@ -204,7 +242,7 @@ function highlightTextNode(node: Text, summary: ScanSummary) {
   replaceTextNodeWithHighlights(node, text, matches, scanResult.results)
 }
 
-function scanPage() {
+async function scanPage(includeOcr = false) {
   ensureContentStyles()
   clearHighlights()
 
@@ -214,11 +252,43 @@ function scanPage() {
     highlightTextNode(node, summary)
   }
 
+  if (includeOcr) {
+    const ocrStartedAt = performance.now()
+    const ocrResult = await scanVisibleImagesForJudol(keywords)
+
+    for (const imageMatch of ocrResult.matches) {
+      mergeScanSummary(summary, imageMatch.scanResult)
+      markOcrImage(imageMatch.image, imageMatch.scanResult, currentBlurEnabled)
+    }
+
+    summary.ocr = {
+      enabled: true,
+      scannedImages: ocrResult.scannedImages,
+      matchedImages: ocrResult.matches.length,
+      skippedImages: ocrResult.skippedImages,
+      executionTimeMs: performance.now() - ocrStartedAt,
+    }
+    summary.executionTimeMs += ocrResult.executionTimeMs
+  } else {
+    summary.ocr = {
+      enabled: false,
+      scannedImages: 0,
+      matchedImages: 0,
+      skippedImages: 0,
+      executionTimeMs: 0,
+    }
+  }
+
   return summary
 }
 
 function setBlur(enabled: boolean) {
+  currentBlurEnabled = enabled
+
   document.querySelectorAll<HTMLElement>(HIGHLIGHT_SELECTOR).forEach((node) => {
+    node.dataset.judolBlur = String(enabled)
+  })
+  document.querySelectorAll<HTMLElement>(OCR_IMAGE_SELECTOR).forEach((node) => {
     node.dataset.judolBlur = String(enabled)
   })
 }
@@ -234,7 +304,9 @@ chrome.runtime?.onMessage?.addListener((message, _sender, sendResponse) => {
   if (!isPopupCommand(message)) return false
 
   if (message.type === 'JUDOL_SCAN') {
-    sendResponse({ ok: true, summary: scanPage() })
+    void scanPage(Boolean(message.includeOcr))
+      .then((summary) => sendResponse({ ok: true, summary }))
+      .catch(() => sendResponse({ ok: false, summary: emptyScanSummary() }))
     return true
   }
 
