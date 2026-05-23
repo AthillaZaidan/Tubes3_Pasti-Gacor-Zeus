@@ -3,7 +3,7 @@ import type { ScanTextResult } from '../content/scanner'
 import { scanTextForJudol } from '../content/scanner'
 
 export type OcrImageMatch = {
-  image: HTMLImageElement
+  image: HTMLElement
   scanResult: ScanTextResult
 }
 
@@ -14,9 +14,11 @@ export type OcrImageScanResult = {
   executionTimeMs: number
 }
 
-const OCR_IMAGE_LIMIT = 6
+const CONTEXT_IMAGE_LIMIT = 96
+const OCR_IMAGE_LIMIT = 24
 const MIN_IMAGE_AREA = 80 * 80
-const IMAGE_CACHE_LIMIT = 80
+const IMAGE_CACHE_LIMIT = 160
+const CONTEXT_TEXT_LIMIT = 400
 const imageTextCache = new Map<string, string>()
 let workerPromise: Promise<Tesseract.Worker> | null = null
 
@@ -39,14 +41,10 @@ function getWorker() {
   return workerPromise
 }
 
-function isVisibleImage(image: HTMLImageElement) {
-  const rect = image.getBoundingClientRect()
-  const style = window.getComputedStyle(image)
-
+function isVisibleElement(element: Element) {
+  const rect = element.getBoundingClientRect()
+  const style = window.getComputedStyle(element)
   return (
-    image.complete &&
-    image.naturalWidth > 0 &&
-    image.naturalHeight > 0 &&
     rect.width > 0 &&
     rect.height > 0 &&
     rect.bottom >= 0 &&
@@ -58,6 +56,10 @@ function isVisibleImage(image: HTMLImageElement) {
     style.visibility !== 'hidden' &&
     style.opacity !== '0'
   )
+}
+
+function isRecognizableImage(image: HTMLImageElement) {
+  return image.complete && image.naturalWidth > 0 && image.naturalHeight > 0
 }
 
 function getImageCacheKey(image: HTMLImageElement) {
@@ -83,8 +85,91 @@ function setCachedText(cacheKey: string, text: string) {
   imageTextCache.set(cacheKey, text)
 }
 
-function getVisibleImages() {
-  return Array.from(document.images).filter(isVisibleImage).slice(0, OCR_IMAGE_LIMIT)
+function getElementArea(element: Element) {
+  const rect = element.getBoundingClientRect()
+  return rect.width * rect.height
+}
+
+function hasCssBackgroundImage(element: Element) {
+  const backgroundImage = window.getComputedStyle(element).backgroundImage
+  return backgroundImage.includes('url(')
+}
+
+function getVisibleImageTargets() {
+  const targets = new Set<HTMLElement>()
+
+  for (const image of document.images) {
+    if (isVisibleElement(image)) targets.add(image)
+  }
+
+  for (const element of document.body.querySelectorAll<HTMLElement>('*')) {
+    if (targets.size >= CONTEXT_IMAGE_LIMIT * 2) break
+    if (element instanceof HTMLImageElement) continue
+    if (hasCssBackgroundImage(element) && isVisibleElement(element)) targets.add(element)
+  }
+
+  return Array.from(targets)
+    .sort((left, right) => getElementArea(right) - getElementArea(left))
+    .slice(0, CONTEXT_IMAGE_LIMIT)
+}
+
+function appendText(parts: string[], text: string | null | undefined) {
+  const trimmed = text?.replace(/\s+/g, ' ').trim()
+  if (trimmed) parts.push(trimmed)
+}
+
+function getNearbyContainer(image: HTMLElement) {
+  return (
+    image.closest('a, button, figure, article, li') ??
+    image.parentElement?.closest('a, button, figure, article, li') ??
+    image.parentElement
+  )
+}
+
+function getFilenameFromSource(source: string) {
+  try {
+    const url = new URL(source)
+    const filename = url.pathname.split('/').pop()
+    return filename ? decodeURIComponent(filename) : ''
+  } catch {
+    const filename = source.split('/').pop()
+    return filename ? decodeURIComponent(filename) : ''
+  }
+}
+
+function getImageSourceText(image: HTMLElement) {
+  if (image instanceof HTMLImageElement) {
+    return getFilenameFromSource(image.currentSrc || image.src)
+  }
+
+  const backgroundImage = window.getComputedStyle(image).backgroundImage
+  const filenames: string[] = []
+
+  for (const match of backgroundImage.matchAll(/url\(["']?([^"')]+)["']?\)/g)) {
+    appendText(filenames, getFilenameFromSource(match[1]))
+  }
+
+  return filenames.join(' ')
+}
+
+function getImageContextText(image: HTMLElement) {
+  const parts: string[] = []
+  const container = getNearbyContainer(image)
+
+  if (image instanceof HTMLImageElement) {
+    appendText(parts, image.alt)
+  }
+
+  appendText(parts, image.title)
+  appendText(parts, image.getAttribute('aria-label'))
+  appendText(parts, getImageSourceText(image))
+
+  if (container && container !== document.body) {
+    appendText(parts, container.getAttribute('aria-label'))
+    appendText(parts, container.textContent)
+  }
+
+  return parts.join(' ').slice(0, CONTEXT_TEXT_LIMIT)
 }
 
 async function recognizeImage(image: HTMLImageElement) {
@@ -108,10 +193,30 @@ export async function scanVisibleImagesForJudol(
   let scannedImages = 0
   let skippedImages = 0
 
-  for (const image of getVisibleImages()) {
+  let recognizedImages = 0
+
+  for (const image of getVisibleImageTargets()) {
     try {
-      const text = await recognizeImage(image)
+      const contextText = getImageContextText(image)
       scannedImages += 1
+
+      if (contextText.length > 0) {
+        const contextScanResult = scanTextForJudol(contextText, keywords, {
+          includeExactKeywordMatches: true,
+        })
+
+        if (contextScanResult.matches.length > 0) {
+          matches.push({ image, scanResult: contextScanResult })
+          continue
+        }
+      }
+
+      if (!(image instanceof HTMLImageElement)) continue
+      if (!isRecognizableImage(image)) continue
+      if (recognizedImages >= OCR_IMAGE_LIMIT) continue
+
+      recognizedImages += 1
+      const text = await recognizeImage(image)
 
       if (text.length === 0) continue
 

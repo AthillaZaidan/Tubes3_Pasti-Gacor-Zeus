@@ -29,7 +29,7 @@ const TOOLTIP_ID = 'judol-detector-tooltip'
 const HIGHLIGHT_SELECTOR = '.judol-highlight'
 const OCR_IMAGE_SELECTOR = '.judol-ocr-image'
 const keywords = parseKeywordText(keywordText)
-let currentBlurEnabled = false
+let currentTextBlurEnabled = false
 
 function ensureContentStyles() {
   if (document.getElementById(STYLE_ID)) return
@@ -141,6 +141,7 @@ function createHighlight(match: DetectionMatch, results: AlgorithmResult[]) {
   highlight.dataset.algorithm = match.algorithm
   highlight.dataset.count = String(algorithmResult?.count ?? 1)
   highlight.dataset.time = `${(algorithmResult?.executionTimeMs ?? 0).toFixed(2)} ms`
+  highlight.dataset.judolBlur = String(currentTextBlurEnabled)
   highlight.addEventListener('mousemove', (event) => showTooltip(highlight, event))
   highlight.addEventListener('mouseleave', hideTooltip)
 
@@ -213,9 +214,8 @@ function mergeScanSummary(summary: ScanSummary, result: ReturnType<typeof scanTe
 }
 
 function markOcrImage(
-  image: HTMLImageElement,
+  image: HTMLElement,
   result: ReturnType<typeof scanTextForJudol>,
-  blurEnabled: boolean,
 ) {
   const firstMatch = result.matches[0]
   const firstResult = result.results.find((algorithmResult) => {
@@ -227,7 +227,7 @@ function markOcrImage(
   image.dataset.algorithm = `OCR + ${firstMatch?.algorithm ?? 'scanner'}`
   image.dataset.count = String(result.totalMatches)
   image.dataset.time = `${(firstResult?.executionTimeMs ?? result.executionTimeMs).toFixed(2)} ms`
-  image.dataset.judolBlur = String(blurEnabled)
+  image.dataset.judolBlur = 'true'
   image.onmousemove = (event) => showTooltip(image, event)
   image.onmouseleave = hideTooltip
 }
@@ -258,7 +258,7 @@ async function scanPage(includeOcr = false) {
 
     for (const imageMatch of ocrResult.matches) {
       mergeScanSummary(summary, imageMatch.scanResult)
-      markOcrImage(imageMatch.image, imageMatch.scanResult, currentBlurEnabled)
+      markOcrImage(imageMatch.image, imageMatch.scanResult)
     }
 
     summary.ocr = {
@@ -283,12 +283,9 @@ async function scanPage(includeOcr = false) {
 }
 
 function setBlur(enabled: boolean) {
-  currentBlurEnabled = enabled
+  currentTextBlurEnabled = enabled
 
   document.querySelectorAll<HTMLElement>(HIGHLIGHT_SELECTOR).forEach((node) => {
-    node.dataset.judolBlur = String(enabled)
-  })
-  document.querySelectorAll<HTMLElement>(OCR_IMAGE_SELECTOR).forEach((node) => {
     node.dataset.judolBlur = String(enabled)
   })
 }
