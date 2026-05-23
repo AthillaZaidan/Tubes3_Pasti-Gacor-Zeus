@@ -15,7 +15,7 @@ declare const chrome: {
     query: (queryInfo: {
       active: boolean
       currentWindow: boolean
-    }) => Promise<Array<{ id?: number }>>
+    }) => Promise<Array<{ id?: number; url?: string }>>
     sendMessage: (tabId: number, message: Record<string, unknown>) => Promise<unknown>
   }
   scripting: {

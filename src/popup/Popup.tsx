@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MatchAlgorithm } from '../algorithms/types'
 
 type ScanSummary = {
@@ -15,7 +15,7 @@ type ScanResponse = {
 }
 
 const algorithms: MatchAlgorithm[] = ['RegEx', 'Weighted-Levenshtein']
-const SUMMARY_STORAGE_KEY = 'judol:lastScanSummary'
+const SUMMARY_STORAGE_PREFIX = 'judol:lastScanSummary:'
 const panelClass =
   'rounded-[20px] border border-[#262626] bg-[#141414]/90 shadow-[0_18px_48px_rgba(0,0,0,0.26)]'
 
@@ -59,6 +59,7 @@ export function Popup() {
   const [summary, setSummary] = useState<ScanSummary>(emptySummary)
   const [status, setStatus] = useState('Ready')
   const [isScanning, setIsScanning] = useState(false)
+  const [storageKey, setStorageKey] = useState<string | null>(null)
 
   const topKeywords = useMemo(() => getTopKeywords(summary.keywordCounts), [summary.keywordCounts])
   const maxAlgorithmCount = Math.max(
@@ -66,23 +67,56 @@ export function Popup() {
     ...algorithms.map((algorithm) => summary.algorithmCounts[algorithm] ?? 0),
   )
 
+  const getActiveTab = useCallback(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    return tab
+  }, [])
+
+  const getActiveTabId = useCallback(async () => {
+    const tab = await getActiveTab()
+    return tab.id
+  }, [getActiveTab])
+
+  const getActiveTabStorageKey = useCallback(async () => {
+    const tab = await getActiveTab()
+
+    if (!tab.url) return null
+
+    try {
+      const url = new URL(tab.url)
+      return `${SUMMARY_STORAGE_PREFIX}${url.origin}${url.pathname}`
+    } catch {
+      return `${SUMMARY_STORAGE_PREFIX}${tab.url}`
+    }
+  }, [getActiveTab])
+
   useEffect(() => {
     async function restoreLastSummary() {
-      const stored = await chrome.storage.local.get([SUMMARY_STORAGE_KEY])
-      const value = stored[SUMMARY_STORAGE_KEY]
+      const key = await getActiveTabStorageKey()
 
-      if (!isScanSummary(value)) return
+      if (!key) {
+        setSummary(emptySummary())
+        setStatus('Ready')
+        return
+      }
+
+      setStorageKey(key)
+
+      const stored = await chrome.storage.local.get([key])
+      const value = stored[key]
+
+      if (!isScanSummary(value)) {
+        setSummary(emptySummary())
+        setStatus('Ready')
+        return
+      }
+
       setSummary(value)
       setStatus(value.totalMatches > 0 ? 'Detected' : 'Clean')
     }
 
     void restoreLastSummary()
-  }, [])
-
-  async function getActiveTabId() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    return tab.id
-  }
+  }, [getActiveTabStorageKey])
 
   async function injectContentScript(tabId: number) {
     await chrome.scripting.executeScript({
@@ -112,7 +146,8 @@ export function Popup() {
 
       if (isScanResponse(response) && response.summary) {
         setSummary(response.summary)
-        await chrome.storage.local.set({ [SUMMARY_STORAGE_KEY]: response.summary })
+        const key = storageKey ?? (await getActiveTabStorageKey())
+        if (key) await chrome.storage.local.set({ [key]: response.summary })
         setStatus(response.summary.totalMatches > 0 ? 'Detected' : 'Clean')
       } else {
         setStatus('No response')
