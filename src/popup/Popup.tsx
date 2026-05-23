@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { MatchAlgorithm } from '../algorithms/types'
 
 type ScanSummary = {
@@ -15,6 +15,7 @@ type ScanResponse = {
 }
 
 const algorithms: MatchAlgorithm[] = ['RegEx', 'Weighted-Levenshtein']
+const SUMMARY_STORAGE_KEY = 'judol:lastScanSummary'
 const panelClass =
   'rounded-[20px] border border-[#262626] bg-[#141414]/90 shadow-[0_18px_48px_rgba(0,0,0,0.26)]'
 
@@ -30,6 +31,18 @@ function emptySummary(): ScanSummary {
 
 function isScanResponse(value: unknown): value is ScanResponse {
   return Boolean(value && typeof value === 'object' && 'ok' in value)
+}
+
+function isScanSummary(value: unknown): value is ScanSummary {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'totalMatches' in value &&
+      'executionTimeMs' in value &&
+      'algorithmCounts' in value &&
+      'algorithmExecutionTimes' in value &&
+      'keywordCounts' in value,
+  )
 }
 
 function formatAlgorithmName(algorithm: MatchAlgorithm) {
@@ -52,6 +65,19 @@ export function Popup() {
     1,
     ...algorithms.map((algorithm) => summary.algorithmCounts[algorithm] ?? 0),
   )
+
+  useEffect(() => {
+    async function restoreLastSummary() {
+      const stored = await chrome.storage.local.get([SUMMARY_STORAGE_KEY])
+      const value = stored[SUMMARY_STORAGE_KEY]
+
+      if (!isScanSummary(value)) return
+      setSummary(value)
+      setStatus(value.totalMatches > 0 ? 'Detected' : 'Clean')
+    }
+
+    void restoreLastSummary()
+  }, [])
 
   async function getActiveTabId() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -86,6 +112,7 @@ export function Popup() {
 
       if (isScanResponse(response) && response.summary) {
         setSummary(response.summary)
+        await chrome.storage.local.set({ [SUMMARY_STORAGE_KEY]: response.summary })
         setStatus(response.summary.totalMatches > 0 ? 'Detected' : 'Clean')
       } else {
         setStatus('No response')

@@ -24,4 +24,10 @@ declare const chrome: {
       files: string[]
     }) => Promise<unknown>
   }
+  storage: {
+    local: {
+      get: (keys: string[]) => Promise<Record<string, unknown>>
+      set: (items: Record<string, unknown>) => Promise<void>
+    }
+  }
 }
