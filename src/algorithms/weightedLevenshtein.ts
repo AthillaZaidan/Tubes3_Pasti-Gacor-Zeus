@@ -123,8 +123,14 @@ export function calculateWeightedLevenshtein(
   return { distance, similarity }
 }
 
+type CandidateToken = {
+  text: string
+  startIndex: number
+  endIndex: number
+}
+
 function getCandidateTokens(text: string) {
-  const tokens: Array<{ text: string; startIndex: number; endIndex: number }> = []
+  const tokens: CandidateToken[] = []
 
   for (const match of text.matchAll(TOKEN_PATTERN)) {
     const matchedText = match[0]
@@ -141,8 +147,41 @@ function getCandidateTokens(text: string) {
   return tokens
 }
 
+function getKeywordTokenCount(keyword: string) {
+  let count = 0
+
+  for (const tokenMatch of keyword.matchAll(TOKEN_PATTERN)) {
+    void tokenMatch
+    count += 1
+  }
+
+  return Math.max(count, 1)
+}
+
+function getCandidateWindows(text: string, tokenCount: number) {
+  const tokens = getCandidateTokens(text)
+
+  if (tokenCount === 1) return tokens
+
+  const windows: CandidateToken[] = []
+
+  for (let index = 0; index <= tokens.length - tokenCount; index += 1) {
+    const first = tokens[index]
+    const last = tokens[index + tokenCount - 1]
+
+    windows.push({
+      text: text.slice(first.startIndex, last.endIndex),
+      startIndex: first.startIndex,
+      endIndex: last.endIndex,
+    })
+  }
+
+  return windows
+}
+
 function isLengthComparable(left: string, right: string) {
-  return Math.abs(Array.from(left).length - Array.from(right).length) <= 2
+  const maxDifference = Math.max(2, Math.ceil(Array.from(left).length * 0.3))
+  return Math.abs(Array.from(left).length - Array.from(right).length) <= maxDifference
 }
 
 export function findWeightedLevenshteinMatches(
@@ -153,21 +192,22 @@ export function findWeightedLevenshteinMatches(
   const startedAt = nowMs()
   const threshold = options.threshold ?? DEFAULT_THRESHOLD
   const matches: DetectionMatch[] = []
-  const tokens = getCandidateTokens(text)
 
   for (const keyword of keywords) {
-    for (const token of tokens) {
-      if (!isLengthComparable(keyword, token.text)) continue
+    const candidates = getCandidateWindows(text, getKeywordTokenCount(keyword))
 
-      const result = calculateWeightedLevenshtein(keyword, token.text, options)
+    for (const candidate of candidates) {
+      if (!isLengthComparable(keyword, candidate.text)) continue
+
+      const result = calculateWeightedLevenshtein(keyword, candidate.text, options)
       if (result.similarity < threshold || result.similarity === 1) continue
 
       matches.push({
         keyword,
-        matchedText: token.text,
+        matchedText: candidate.text,
         algorithm: 'Weighted-Levenshtein',
-        startIndex: token.startIndex,
-        endIndex: token.endIndex,
+        startIndex: candidate.startIndex,
+        endIndex: candidate.endIndex,
         score: result.similarity,
       })
     }
