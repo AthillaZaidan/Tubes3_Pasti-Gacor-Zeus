@@ -14,6 +14,9 @@ export type ScanTextResult = {
   executionTimeMs: number
 }
 
+const SCAN_CACHE_LIMIT = 750
+const scanCache = new Map<string, ScanTextResult>()
+
 function nowMs() {
   return performance.now()
 }
@@ -48,6 +51,38 @@ export function parseKeywordText(keywordText: string) {
   return normalizeKeywordList(keywordText.split(/\r?\n/g))
 }
 
+function createScanCacheKey(text: string, keywords: string[], options: ScanTextOptions) {
+  return [
+    text,
+    keywords.join('\u001f'),
+    options.fuzzyThreshold ?? '',
+    options.includeExactKeywordMatches ? '1' : '0',
+  ].join('\u001e')
+}
+
+function getCachedResult(cacheKey: string) {
+  const cached = scanCache.get(cacheKey)
+  if (!cached) return null
+
+  scanCache.delete(cacheKey)
+  scanCache.set(cacheKey, cached)
+
+  return {
+    ...cached,
+    executionTimeMs: 0,
+    results: cached.results.map((result) => ({ ...result, executionTimeMs: 0 })),
+  }
+}
+
+function setCachedResult(cacheKey: string, result: ScanTextResult) {
+  if (scanCache.size >= SCAN_CACHE_LIMIT) {
+    const firstKey = scanCache.keys().next().value
+    if (firstKey) scanCache.delete(firstKey)
+  }
+
+  scanCache.set(cacheKey, result)
+}
+
 export function scanTextForJudol(
   text: string,
   keywords: string[],
@@ -55,6 +90,11 @@ export function scanTextForJudol(
 ): ScanTextResult {
   const startedAt = nowMs()
   const normalizedKeywords = normalizeKeywordList(keywords)
+  const cacheKey = createScanCacheKey(text, normalizedKeywords, options)
+  const cached = getCachedResult(cacheKey)
+
+  if (cached) return cached
+
   const regexResult = findJudolPatternMatches(text)
   const weightedResult = findWeightedLevenshteinMatches(text, normalizedKeywords, {
     threshold: options.fuzzyThreshold,
@@ -63,10 +103,13 @@ export function scanTextForJudol(
   const matches = dedupeMatches([...regexResult.matches, ...weightedResult.matches])
   const results = [regexResult, weightedResult]
 
-  return {
+  const result = {
     matches,
     results,
     totalMatches: matches.length,
     executionTimeMs: nowMs() - startedAt,
   }
+
+  setCachedResult(cacheKey, result)
+  return result
 }
