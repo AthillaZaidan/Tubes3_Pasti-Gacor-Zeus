@@ -152,6 +152,7 @@ function getImageSourceText(image: HTMLElement) {
   return filenames.join(' ')
 }
 
+function getImageContextText(image: HTMLElement) {
   const parts: string[] = []
   const container = getNearbyContainer(image)
 
