@@ -39,14 +39,39 @@ function bmScan(text: string, pattern: string, table: Map<string, number>): Scan
 }
 
 export function findBoyerMooreMatches(
-  _text: string,
-  _keywords: string[]
+  text: string,
+  keywords: string[]
 ): AlgorithmResult {
+  const start = performance.now()
+  const normalizedText = text.normalize('NFKC').toLowerCase()
+  const matches: DetectionMatch[] = []
+  let totalComparisons = 0
+
+  for (const keyword of keywords) {
+    const pattern = keyword.normalize('NFKC').toLowerCase()
+    if (pattern.length === 0 || pattern.length > normalizedText.length) continue
+
+    const table = buildBadCharTable(pattern)
+    const { starts, comparisons } = bmScan(normalizedText, pattern, table)
+    totalComparisons += comparisons
+
+    for (const s of starts) {
+      matches.push({
+        keyword,
+        matchedText: text.slice(s, s + pattern.length),
+        algorithm: 'Boyer-Moore',
+        startIndex: s,
+        endIndex: s + pattern.length,
+        comparisons,
+      })
+    }
+  }
+
   return {
     algorithm: 'Boyer-Moore',
-    matches: [],
-    count: 0,
-    executionTimeMs: 0,
-    comparisons: 0,
+    matches,
+    count: matches.length,
+    executionTimeMs: performance.now() - start,
+    comparisons: totalComparisons,
   }
 }
