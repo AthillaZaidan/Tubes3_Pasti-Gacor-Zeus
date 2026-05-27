@@ -1,5 +1,9 @@
 import type { AlgorithmResult, DetectionMatch } from './types'
 
+function nowMs() {
+  return performance.now()
+}
+
 function buildBadCharTable(pattern: string): Map<string, number> {
   const table = new Map<string, number>()
   for (let i = 0; i < pattern.length; i++) {
@@ -29,7 +33,7 @@ function bmScan(text: string, pattern: string, table: Map<string, number>): Scan
       starts.push(s)
       s += m
     } else {
-      comparisons++ // the mismatch
+      comparisons++
       const badCharShift = j - (table.get(text[s + j]) ?? -1)
       s += Math.max(1, badCharShift)
     }
@@ -42,7 +46,7 @@ export function findBoyerMooreMatches(
   text: string,
   keywords: string[]
 ): AlgorithmResult {
-  const start = performance.now()
+  const startedAt = nowMs()
   const normalizedText = text.normalize('NFKC').toLowerCase()
   const matches: DetectionMatch[] = []
   let totalComparisons = 0
@@ -71,7 +75,7 @@ export function findBoyerMooreMatches(
     algorithm: 'Boyer-Moore',
     matches,
     count: matches.length,
-    executionTimeMs: performance.now() - start,
+    executionTimeMs: nowMs() - startedAt,
     comparisons: totalComparisons,
   }
 }
