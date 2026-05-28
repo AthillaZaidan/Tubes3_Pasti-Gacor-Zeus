@@ -1,5 +1,6 @@
 import { findJudolPatternMatches } from '../algorithms/regexMatcher'
 import type { AlgorithmResult, DetectionMatch } from '../algorithms/types'
+import { findKmpMatches } from '../algorithms/kmp'
 import { findWeightedLevenshteinMatches } from '../algorithms/weightedLevenshtein'
 
 export type ScanTextOptions = {
@@ -95,13 +96,18 @@ export function scanTextForJudol(
 
   if (cached) return cached
 
+  const kmpResult = findKmpMatches(text, normalizedKeywords)
   const regexResult = findJudolPatternMatches(text)
   const weightedResult = findWeightedLevenshteinMatches(text, normalizedKeywords, {
     threshold: options.fuzzyThreshold,
     includeExact: options.includeExactKeywordMatches,
   })
-  const matches = dedupeMatches([...regexResult.matches, ...weightedResult.matches])
-  const results = [regexResult, weightedResult]
+  const matches = dedupeMatches([
+    ...kmpResult.matches,
+    ...regexResult.matches,
+    ...weightedResult.matches,
+  ])
+  const results = [kmpResult, regexResult, weightedResult]
 
   const result = {
     matches,
