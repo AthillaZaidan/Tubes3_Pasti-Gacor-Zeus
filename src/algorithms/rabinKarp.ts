@@ -45,3 +45,41 @@ function rkScan(text: string, pattern: string, patternHash: number): ScanResult 
 
   return { starts, comparisons }
 }
+
+export function findRabinKarpMatches(
+  text: string,
+  keywords: string[]
+): AlgorithmResult {
+  const startedAt = performance.now()
+  const normalizedText = text.normalize('NFKC').toLowerCase()
+  const matches: DetectionMatch[] = []
+  let totalComparisons = 0
+
+  for (const keyword of keywords) {
+    const pattern = keyword.normalize('NFKC').toLowerCase()
+    if (pattern.length === 0 || pattern.length > normalizedText.length) continue
+
+    const patternHash = computeHash(pattern, pattern.length)
+    const { starts, comparisons } = rkScan(normalizedText, pattern, patternHash)
+    totalComparisons += comparisons
+
+    for (const s of starts) {
+      matches.push({
+        keyword,
+        matchedText: text.slice(s, s + pattern.length),
+        algorithm: 'Rabin-Karp',
+        startIndex: s,
+        endIndex: s + pattern.length,
+        comparisons,
+      })
+    }
+  }
+
+  return {
+    algorithm: 'Rabin-Karp',
+    matches,
+    count: matches.length,
+    executionTimeMs: performance.now() - startedAt,
+    comparisons: totalComparisons,
+  }
+}
