@@ -1,4 +1,5 @@
 import { findBoyerMooreMatches } from '../algorithms/boyerMoore'
+import { findRabinKarpMatches } from '../algorithms/rabinKarp'
 import { findJudolPatternMatches } from '../algorithms/regexMatcher'
 import type { AlgorithmResult, DetectionMatch } from '../algorithms/types'
 import { findWeightedLevenshteinMatches } from '../algorithms/weightedLevenshtein'
@@ -102,8 +103,9 @@ export function scanTextForJudol(
     includeExact: options.includeExactKeywordMatches,
   })
   const bmResult = findBoyerMooreMatches(text, normalizedKeywords)
-  const matches = dedupeMatches([...regexResult.matches, ...weightedResult.matches, ...bmResult.matches])
-  const results = [regexResult, weightedResult, bmResult]
+  const rkResult = findRabinKarpMatches(text, normalizedKeywords)
+  const matches = dedupeMatches([...regexResult.matches, ...weightedResult.matches, ...bmResult.matches, ...rkResult.matches])
+  const results = [regexResult, weightedResult, bmResult, rkResult]
 
   const result = {
     matches,
