@@ -15,12 +15,7 @@ type ScanResponse = {
   summary?: ScanSummary
 }
 
-const algorithms: MatchAlgorithm[] = [
-  'KMP',
-  'Aho-Corasick',
-  'RegEx',
-  'Weighted-Levenshtein',
-]
+const algorithms: MatchAlgorithm[] = ['RegEx', 'Boyer-Moore', 'Rabin-Karp', 'Weighted-Levenshtein', 'KMP', 'Aho-Corasick']
 const SUMMARY_STORAGE_PREFIX = 'judol:lastScanSummary:'
 const OCR_ENABLED_STORAGE_KEY = 'judol:ocrEnabled'
 const panelClass =

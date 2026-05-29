@@ -1,3 +1,5 @@
+import { findBoyerMooreMatches } from '../algorithms/boyerMoore'
+import { findRabinKarpMatches } from '../algorithms/rabinKarp'
 import { findJudolPatternMatches } from '../algorithms/regexMatcher'
 import type { AlgorithmResult, DetectionMatch } from '../algorithms/types'
 import { findKmpMatches } from '../algorithms/kmp'
@@ -104,13 +106,11 @@ export function scanTextForJudol(
     threshold: options.fuzzyThreshold,
     includeExact: options.includeExactKeywordMatches,
   })
-  const matches = dedupeMatches([
-    ...kmpResult.matches,
-    ...ahoResult.matches,
-    ...regexResult.matches,
-    ...weightedResult.matches,
-  ])
-  const results = [kmpResult, ahoResult, regexResult, weightedResult]
+  const bmResult = findBoyerMooreMatches(text, normalizedKeywords)
+  const rkResult = findRabinKarpMatches(text, normalizedKeywords)
+  const matches = dedupeMatches([...regexResult.matches, ...weightedResult.matches, ...bmResult.matches, ...rkResult.matches, ...kmpResult.matches, ...ahoResult.matches])
+  const results = [regexResult, weightedResult, bmResult, rkResult, kmpResult, ahoResult]
+
 
   const result = {
     matches,
