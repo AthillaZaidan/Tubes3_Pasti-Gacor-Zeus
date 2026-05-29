@@ -1,0 +1,243 @@
+Bagian ini menjelaskan teori yang menjadi dasar pengembangan Judol Detector.
+Konsep yang dibahas meliputi ekstensi browser, DOM, pencocokan string,
+\textit{regular expression}, Weighted Levenshtein Distance, OCR, serta
+mekanisme penandaan hasil deteksi pada halaman web.
+
+\section{Ekstensi Browser Chromium}
+
+Ekstensi browser adalah perangkat lunak tambahan yang berjalan di dalam
+peramban untuk menambah atau memodifikasi perilaku halaman web. Pada Chromium,
+ekstensi didefinisikan melalui file \texttt{manifest.json} yang memuat
+metadata, permission, script, dan konfigurasi antarmuka \cite{chrome_extensions}.
+
+Manifest V3 memisahkan beberapa komponen utama:
+
+\begin{itemize}
+    \item \textbf{Popup}, yaitu antarmuka kecil yang muncul ketika pengguna
+    menekan ikon ekstensi.
+    \item \textbf{Content script}, yaitu script yang disisipkan ke halaman web
+    dan dapat membaca atau memodifikasi DOM halaman.
+    \item \textbf{Permission}, yaitu izin yang diperlukan ekstensi, misalnya
+    izin membaca tab aktif, menyimpan data lokal, atau mengeksekusi script.
+\end{itemize}
+
+Pada Judol Detector, popup digunakan untuk menampilkan statistik dan kontrol
+pemindaian, sedangkan content script digunakan untuk mengambil teks halaman,
+menjalankan highlight, dan memberi efek blur pada konten yang terdeteksi.
+
+\section{Document Object Model}
+
+\textit{Document Object Model} (DOM) adalah representasi struktur dokumen HTML
+dalam bentuk pohon hierarkis \cite{mdn_dom}. Setiap elemen HTML, teks, dan
+atribut dapat direpresentasikan sebagai node. Melalui DOM, script dapat membaca
+isi halaman, mencari elemen tertentu, dan memodifikasi tampilan halaman secara
+dinamis.
+
+Dalam Judol Detector, DOM digunakan untuk dua keperluan utama. Pertama, content
+script menelusuri DOM untuk menemukan node teks yang terlihat dan relevan untuk
+dipindai. Kedua, setelah sebuah teks terdeteksi, node teks tersebut diganti
+dengan elemen \texttt{span} khusus agar hasil deteksi dapat diberi highlight,
+tooltip, dan blur.
+
+Tidak semua node teks perlu dipindai. Teks yang berada pada elemen seperti
+\texttt{script}, \texttt{style}, \texttt{noscript}, \texttt{textarea}, dan
+\texttt{input} diabaikan karena tidak merepresentasikan konten halaman yang
+umumnya dibaca pengguna. Pemfilteran ini membuat proses pemindaian lebih fokus
+pada teks yang benar-benar tampil pada halaman.
+
+\section{Pencocokan String}
+
+Pencocokan string adalah proses mencari kemunculan suatu pola dalam teks.
+Jika diberikan teks $T$ dengan panjang $n$ dan pola $P$ dengan panjang $m$,
+tujuan pencocokan string adalah menemukan indeks pada $T$ di mana $P$ muncul.
+Persoalan ini merupakan dasar dari banyak aplikasi pemrosesan teks, termasuk
+deteksi kata kunci \cite{cormen2009introduction}.
+
+Dalam konteks deteksi judol, pola yang dicari adalah daftar kata kunci seperti
+\texttt{slot}, \texttt{gacor}, \texttt{rtp}, \texttt{jackpot}, dan frasa lain
+yang berkaitan dengan promosi judi daring. Pencocokan dapat dilakukan secara
+eksak maupun tidak eksak. Pencocokan eksak hanya menerima string yang sama
+persis, sedangkan pencocokan tidak eksak menerima string yang mirip berdasarkan
+ukuran tertentu.
+
+\section{Regular Expression}
+
+\textit{Regular expression} (RegEx) adalah notasi untuk mendeskripsikan pola
+teks. RegEx memungkinkan pencarian tidak hanya berdasarkan kata tetap, tetapi
+juga berdasarkan struktur karakter tertentu \cite{friedl2006regex}. Contohnya,
+pola huruf yang diikuti angka dapat digunakan untuk mendeteksi nama situs atau
+kode promosi yang ditulis seperti \texttt{SLOT88}, \texttt{ZEUS222}, atau
+\texttt{MAXWIN234}.
+
+Pada Judol Detector, RegEx digunakan untuk mendeteksi pola kata yang terdiri
+atas minimal dua huruf dan diikuti dua hingga tiga angka. Pola ini menangkap
+format umum yang sering muncul pada konten promosi judol, terutama ketika nama
+brand atau istilah promosi digabungkan dengan angka.
+
+Secara konseptual, pola yang digunakan dapat dijelaskan sebagai berikut:
+
+\begin{table}[H]
+\centering
+\caption{Komponen pola RegEx}
+\label{tab:regex-pattern}
+\begin{tabular}{|p{4cm}|p{9cm}|}
+\hline
+\textbf{Komponen} & \textbf{Makna} \\
+\hline
+Batas kiri token & Memastikan pola tidak berada di tengah kata lain. \\
+\hline
+Huruf minimal dua karakter & Menangkap bagian nama atau istilah promosi. \\
+\hline
+Angka dua sampai tiga digit & Menangkap akhiran numerik seperti \texttt{88}, \texttt{777}, atau \texttt{222}. \\
+\hline
+Batas kanan token & Memastikan pola berakhir sebagai token utuh. \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Levenshtein Distance}
+
+\textit{Levenshtein Distance} adalah ukuran jarak antara dua string berdasarkan
+jumlah minimum operasi edit yang diperlukan untuk mengubah satu string menjadi
+string lain \cite{levenshtein1966}. Operasi edit yang umum digunakan adalah:
+
+\begin{enumerate}
+    \item penyisipan karakter,
+    \item penghapusan karakter,
+    \item penggantian karakter.
+\end{enumerate}
+
+Jika jarak edit antara dua string kecil, maka kedua string dianggap mirip.
+Sebagai contoh, kata \texttt{gacor} dan \texttt{g4cor} hanya berbeda pada satu
+karakter jika angka \texttt{4} dianggap sebagai pengganti huruf \texttt{a}.
+
+\subsection{Weighted Levenshtein Distance}
+
+Weighted Levenshtein Distance adalah variasi Levenshtein Distance yang memberi
+bobot berbeda pada operasi edit tertentu. Pada Judol Detector, penggantian
+karakter yang mirip secara visual diberi biaya lebih kecil dibandingkan
+penggantian karakter biasa. Pendekatan ini digunakan karena banyak konten judol
+memodifikasi kata dengan karakter yang tampak mirip.
+
+\begin{table}[H]
+\centering
+\caption{Contoh karakter yang dianggap mirip secara visual}
+\label{tab:visual-substitution}
+\begin{tabular}{|p{4cm}|p{8cm}|}
+\hline
+\textbf{Huruf} & \textbf{Variasi visual} \\
+\hline
+\texttt{o} & \texttt{0} \\
+\hline
+\texttt{a} & \texttt{4} \\
+\hline
+\texttt{i} & \texttt{1}, \texttt{l}, \texttt{|} \\
+\hline
+\texttt{e} & \texttt{3} \\
+\hline
+\texttt{s} & \texttt{5}, \texttt{\$} \\
+\hline
+\texttt{b} & \texttt{8} \\
+\hline
+\texttt{g} & \texttt{6}, \texttt{9} \\
+\hline
+\texttt{t} & \texttt{7} \\
+\hline
+\end{tabular}
+\end{table}
+
+Nilai kemiripan dihitung dari jarak edit berbobot. Jika nilai kemiripan
+melebihi ambang batas tertentu, token pada halaman dianggap cocok dengan kata
+kunci. Pada implementasi program, ambang batas default yang digunakan adalah
+0,78. Nilai ini dipilih agar sistem cukup sensitif terhadap variasi penulisan,
+tetapi tetap membatasi jumlah hasil positif palsu.
+
+\section{Tokenisasi Teks}
+
+Sebelum pencocokan fuzzy dilakukan, teks perlu dipecah menjadi kandidat token.
+Token adalah potongan teks yang berisi huruf, angka, garis bawah, atau beberapa
+simbol yang relevan. Tokenisasi memungkinkan program membandingkan kata kunci
+dengan bagian teks yang berukuran sebanding.
+
+Untuk kata kunci yang terdiri atas beberapa kata, seperti \texttt{slot gacor}
+atau \texttt{bonus deposit}, program membentuk jendela token dengan jumlah
+token yang sama dengan jumlah token pada kata kunci. Dengan cara ini, frasa
+multi-kata tetap dapat dibandingkan menggunakan Weighted Levenshtein.
+
+\section{Deduplication dan Cache}
+
+Pipeline deteksi dapat menghasilkan lebih dari satu hasil pada rentang teks
+yang sama, misalnya ketika satu token cocok oleh RegEx dan juga cocok oleh
+Weighted Levenshtein. Oleh karena itu, program melakukan deduplikasi berdasarkan
+rentang indeks awal dan akhir dari hasil deteksi. Hasil yang memiliki rentang
+sama hanya disimpan sekali.
+
+Program juga menggunakan cache untuk menyimpan hasil pemindaian teks. Cache
+menghindari penghitungan ulang terhadap teks, daftar kata kunci, dan opsi
+deteksi yang sama. Dengan demikian, pemindaian berulang pada halaman yang sama
+dapat dilakukan lebih efisien.
+
+\section{Optical Character Recognition}
+
+\textit{Optical Character Recognition} (OCR) adalah proses mengenali teks dari
+gambar. OCR berguna ketika teks tidak tersedia sebagai node DOM, melainkan
+menjadi bagian dari banner, poster, atau gambar promosi. Pada Judol Detector,
+OCR dilakukan menggunakan Tesseract.js, yaitu port JavaScript dari mesin OCR
+Tesseract \cite{tesseractjs}.
+
+Proses OCR pada program terdiri atas beberapa tahap:
+
+\begin{enumerate}
+    \item memilih gambar atau elemen visual yang terlihat pada viewport;
+    \item mengambil teks konteks dari atribut gambar, nama file, dan container
+    terdekat;
+    \item menjalankan pipeline deteksi pada teks konteks;
+    \item jika belum terdeteksi dan elemen berupa gambar yang valid, menjalankan
+    OCR dengan Tesseract.js;
+    \item menjalankan pipeline deteksi pada teks hasil OCR;
+    \item memberi penanda dan blur pada gambar yang dinyatakan positif.
+\end{enumerate}
+
+Pendekatan ini menggabungkan OCR dengan analisis konteks. Analisis konteks
+penting karena beberapa gambar promosi memiliki nama game atau kata kunci pada
+caption, atribut \texttt{alt}, atau nama file, sedangkan OCR murni tidak selalu
+mampu membaca teks pada gambar dengan akurat.
+
+\section{Highlight, Tooltip, dan Blur}
+
+Setelah hasil deteksi ditemukan, program perlu menyampaikan informasi tersebut
+kepada pengguna. Judol Detector melakukan hal ini dengan memodifikasi DOM
+halaman. Teks yang terdeteksi dibungkus dalam elemen \texttt{span} dengan class
+khusus. Class tersebut diberi style agar teks terlihat sebagai highlight.
+
+Setiap highlight menyimpan metadata deteksi pada atribut \texttt{data-*}, yaitu
+kata kunci, algoritma, jumlah hasil, dan waktu eksekusi. Metadata ini digunakan
+untuk menampilkan tooltip ketika pengguna mengarahkan kursor ke hasil deteksi.
+
+Fitur blur digunakan untuk menyamarkan konten yang terdeteksi. Pada teks, blur
+dapat diaktifkan atau dimatikan melalui popup. Pada gambar hasil OCR yang
+positif, blur diberikan secara otomatis agar konten visual yang dicurigai tidak
+langsung terlihat jelas.
+
+\section{Kompleksitas Algoritma}
+
+Analisis kompleksitas digunakan untuk memperkirakan biaya komputasi pipeline
+deteksi. Jika $n$ adalah panjang teks, $k$ adalah jumlah kata kunci, dan $m$
+adalah panjang rata-rata kata kunci, maka:
+
+\begin{itemize}
+    \item RegEx berjalan terhadap teks dengan biaya yang bergantung pada engine
+    RegExp dan pola yang digunakan, tetapi pada pola sederhana umumnya linear
+    terhadap panjang teks.
+    \item Weighted Levenshtein membandingkan kandidat token dengan kata kunci.
+    Setiap perbandingan dua string membutuhkan $O(m^2)$ pada kasus umum karena
+    menggunakan tabel dinamis dua dimensi.
+    \item OCR memiliki biaya paling besar karena melibatkan pengenalan citra.
+    Oleh karena itu, jumlah gambar yang diproses dibatasi dan hasil OCR
+    disimpan dalam cache.
+\end{itemize}
+
+Dalam implementasi, performa dijaga dengan beberapa strategi: membatasi jumlah
+gambar OCR, menyaring gambar berdasarkan ukuran dan visibilitas, menggunakan
+cache hasil teks dan OCR, serta melakukan deduplikasi hasil deteksi agar output
+tidak berulang.

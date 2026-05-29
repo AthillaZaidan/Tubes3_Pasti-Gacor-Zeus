@@ -2,6 +2,8 @@ import { findBoyerMooreMatches } from '../algorithms/boyerMoore'
 import { findRabinKarpMatches } from '../algorithms/rabinKarp'
 import { findJudolPatternMatches } from '../algorithms/regexMatcher'
 import type { AlgorithmResult, DetectionMatch } from '../algorithms/types'
+import { findKmpMatches } from '../algorithms/kmp'
+import { findAhoCorasickMatches } from '../algorithms/ahoCorasick'
 import { findWeightedLevenshteinMatches } from '../algorithms/weightedLevenshtein'
 
 export type ScanTextOptions = {
@@ -97,6 +99,8 @@ export function scanTextForJudol(
 
   if (cached) return cached
 
+  const kmpResult = findKmpMatches(text, normalizedKeywords)
+  const ahoResult = findAhoCorasickMatches(text, normalizedKeywords)
   const regexResult = findJudolPatternMatches(text)
   const weightedResult = findWeightedLevenshteinMatches(text, normalizedKeywords, {
     threshold: options.fuzzyThreshold,
@@ -104,8 +108,15 @@ export function scanTextForJudol(
   })
   const bmResult = findBoyerMooreMatches(text, normalizedKeywords)
   const rkResult = findRabinKarpMatches(text, normalizedKeywords)
-  const matches = dedupeMatches([...regexResult.matches, ...weightedResult.matches, ...bmResult.matches, ...rkResult.matches])
-  const results = [regexResult, weightedResult, bmResult, rkResult]
+  const matches = dedupeMatches([
+    ...kmpResult.matches,
+    ...ahoResult.matches,
+    ...regexResult.matches,
+    ...weightedResult.matches,
+    ...bmResult.matches,
+    ...rkResult.matches,
+  ])
+  const results = [kmpResult, ahoResult, regexResult, weightedResult, bmResult, rkResult]
 
   const result = {
     matches,

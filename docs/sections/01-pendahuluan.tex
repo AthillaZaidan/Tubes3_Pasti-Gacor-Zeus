@@ -1,0 +1,163 @@
+\section{Kisah}
+
+Perkembangan web membuat informasi dapat disebarkan dengan sangat cepat.
+Halaman web, media sosial, forum, dan situs promosi dapat memuat berbagai
+jenis konten hanya dalam hitungan detik. Di sisi lain, kemudahan penyebaran
+informasi juga membuka ruang bagi munculnya konten berisiko, salah satunya
+konten yang berkaitan dengan judi daring atau \textit{judi online} (judol).
+Konten seperti ini sering kali muncul dalam bentuk kata kunci eksplisit,
+variasi penulisan, angka yang disisipkan ke dalam kata, hingga teks yang
+tertanam di dalam gambar.
+
+Deteksi manual terhadap konten judol tidak selalu praktis. Sebuah halaman web
+dapat memiliki banyak elemen teks, tautan, gambar promosi, dan istilah yang
+sengaja dimodifikasi agar tidak mudah ditemukan oleh pencarian biasa. Sebagai
+contoh, kata seperti \texttt{gacor} dapat ditulis menjadi \texttt{g4cor},
+\texttt{slot} dapat muncul sebagai bagian dari frasa promosi, dan nama situs
+dapat ditulis dengan pola huruf diikuti angka seperti \texttt{ZEUS222}.
+Variasi semacam ini membuat pencocokan kata secara eksak saja tidak cukup.
+
+Permasalahan tersebut dapat dipandang sebagai persoalan pencocokan string.
+Sebuah sistem perlu membaca teks pada halaman web, membandingkannya dengan
+daftar kata kunci yang dicurigai, mengenali pola tertentu menggunakan
+\textit{regular expression}, serta mendeteksi bentuk penulisan yang mirip
+melalui pendekatan \textit{approximate string matching}. Selain itu, karena
+sebagian konten promosi muncul dalam gambar, sistem juga perlu memiliki
+kemampuan \textit{Optical Character Recognition} (OCR) agar teks pada gambar
+dapat diproses oleh pipeline deteksi yang sama.
+
+Pada Tugas Besar ini, dikembangkan sebuah ekstensi Chromium bernama
+\textbf{Judol Detector}. Ekstensi ini melakukan pemindaian terhadap teks yang
+terlihat pada halaman web, mendeteksi indikasi konten judol menggunakan
+kombinasi algoritma pencocokan string, menandai teks yang terdeteksi secara
+langsung pada halaman, serta menampilkan statistik hasil deteksi melalui popup
+ekstensi. Program juga menyediakan mode blur untuk menyamarkan konten yang
+terdeteksi dan fitur OCR untuk memindai teks yang tertanam pada gambar.
+
+\section{Latar Belakang}
+
+Pencocokan string merupakan salah satu persoalan mendasar dalam ilmu komputer.
+Dalam bentuk paling sederhana, pencocokan string bertujuan menemukan kemunculan
+suatu pola dalam teks. Persoalan ini banyak digunakan dalam mesin pencari,
+editor teks, bioinformatika, keamanan siber, dan sistem moderasi konten.
+Algoritma klasik seperti Knuth-Morris-Pratt (KMP) dan Boyer-Moore dirancang
+untuk melakukan pencocokan eksak secara efisien dengan mengurangi jumlah
+perbandingan karakter yang tidak perlu \cite{cormen2009introduction}.
+
+Pada konteks deteksi konten judol, pencocokan eksak berguna untuk menemukan
+kata atau frasa yang sudah diketahui, seperti \texttt{slot}, \texttt{rtp},
+\texttt{bonus deposit}, atau \texttt{situs judi}. Namun, konten promosi sering
+menggunakan variasi penulisan untuk menghindari deteksi sederhana. Penulisan
+seperti \texttt{H0KI88}, \texttt{G4COR}, atau \texttt{SLOT777} tetap dapat
+dimaknai oleh manusia sebagai istilah judol, meskipun tidak sama persis dengan
+kata kunci dasar. Oleh karena itu, diperlukan pendekatan lain seperti
+\textit{regular expression} dan \textit{fuzzy matching}.
+
+\textit{Regular expression} dapat digunakan untuk mendeteksi pola tekstual
+yang terstruktur, misalnya gabungan huruf dan angka yang sering digunakan pada
+nama situs atau kode promosi \cite{friedl2006regex}. Sementara itu,
+\textit{Levenshtein Distance} mengukur jarak edit antara dua string berdasarkan
+jumlah operasi penyisipan, penghapusan, dan penggantian karakter yang
+diperlukan untuk mengubah satu string menjadi string lain \cite{levenshtein1966}.
+Dengan memberikan bobot khusus pada karakter yang mirip secara visual, sistem
+dapat mengenali variasi seperti huruf \texttt{o} yang diganti angka
+\texttt{0}, huruf \texttt{a} yang diganti angka \texttt{4}, atau huruf
+\texttt{s} yang diganti angka \texttt{5}.
+
+Web modern juga tidak hanya memuat teks dalam bentuk node DOM. Banyak konten
+promosi disisipkan dalam gambar, banner, atau elemen visual. Untuk menangani
+kasus tersebut, Judol Detector menggunakan OCR berbasis Tesseract.js untuk
+mengambil teks dari gambar yang terlihat pada halaman \cite{tesseractjs}.
+Teks hasil OCR kemudian diproses menggunakan pipeline deteksi yang sama dengan
+teks DOM.
+
+Pemilihan bentuk ekstensi browser memungkinkan deteksi dilakukan langsung pada
+halaman yang sedang dibuka pengguna. Dengan Manifest V3, ekstensi Chromium
+dapat menjalankan \textit{content script} untuk berinteraksi dengan halaman,
+serta menyediakan popup sebagai antarmuka ringkas untuk menampilkan status dan
+statistik pemindaian \cite{chrome_extensions}. Pendekatan ini membuat sistem
+tidak perlu mengunduh halaman melalui server terpisah, melainkan bekerja di
+sisi klien pada halaman yang sedang aktif.
+
+\section{Deskripsi Tugas}
+
+Program Judol Detector adalah ekstensi Chromium untuk mendeteksi indikasi
+konten judi daring pada halaman web. Program memindai teks yang terlihat pada
+halaman, menjalankan algoritma pencocokan terhadap daftar kata kunci, menandai
+hasil deteksi pada halaman, dan menampilkan ringkasan statistik melalui popup.
+
+Secara umum, alur kerja program adalah sebagai berikut:
+
+\begin{enumerate}
+    \item Pengguna membuka halaman web yang ingin diperiksa.
+    \item Pengguna membuka popup ekstensi dan menjalankan proses pemindaian.
+    \item \textit{Content script} mengumpulkan node teks yang terlihat pada DOM.
+    \item Program menjalankan pipeline deteksi, yaitu pencocokan pola dengan
+    RegEx dan pencocokan fuzzy dengan Weighted Levenshtein.
+    \item Jika OCR diaktifkan, program juga memindai gambar yang terlihat dan
+    menjalankan pipeline deteksi terhadap teks hasil OCR maupun konteks gambar.
+    \item Teks atau gambar yang terdeteksi diberi penanda visual pada halaman.
+    \item Popup menampilkan jumlah hasil deteksi, waktu eksekusi, perbandingan
+    algoritma, kata kunci paling sering muncul, dan ringkasan OCR.
+\end{enumerate}
+
+Program dikembangkan menggunakan TypeScript, React, Vite, Tailwind CSS, dan
+Tesseract.js. TypeScript digunakan untuk menjaga struktur data deteksi,
+React digunakan untuk membangun antarmuka popup, Vite digunakan sebagai build
+tool, Tailwind CSS digunakan untuk styling, dan Tesseract.js digunakan untuk
+fitur OCR.
+
+\subsection{Masukan}
+
+Masukan yang digunakan oleh program terdiri atas beberapa komponen berikut:
+
+\begin{enumerate}
+    \item \textbf{Halaman web aktif}, yaitu halaman yang sedang dibuka pada
+    browser Chromium dan menjadi target pemindaian.
+
+    \item \textbf{Teks DOM yang terlihat}, yaitu kumpulan node teks yang dapat
+    dibaca dari struktur DOM halaman dan tidak berada pada elemen yang harus
+    diabaikan seperti \texttt{script}, \texttt{style}, \texttt{textarea}, dan
+    \texttt{input}.
+
+    \item \textbf{Daftar kata kunci}, yaitu kumpulan istilah yang berkaitan
+    dengan judol, seperti \texttt{slot}, \texttt{gacor}, \texttt{rtp},
+    \texttt{jackpot}, \texttt{casino online}, dan berbagai variasi frasa
+    promosi lain.
+
+    \item \textbf{Gambar halaman}, yaitu elemen gambar atau elemen visual yang
+    terlihat pada viewport dan dapat diproses melalui OCR atau teks konteks
+    di sekitar gambar.
+
+    \item \textbf{Pengaturan popup}, yaitu pilihan pengguna seperti menjalankan
+    ulang pemindaian, mengaktifkan OCR, dan mengaktifkan blur terhadap konten
+    yang terdeteksi.
+\end{enumerate}
+
+\subsection{Keluaran}
+
+Keluaran yang dihasilkan program adalah sebagai berikut:
+
+\begin{enumerate}
+    \item \textbf{Highlight pada halaman}, yaitu penandaan visual pada teks
+    yang terdeteksi sebagai indikasi konten judol.
+
+    \item \textbf{Blur konten}, yaitu penyamaran visual terhadap teks atau
+    gambar yang terdeteksi ketika fitur blur diaktifkan atau ketika gambar
+    hasil OCR dinyatakan positif.
+
+    \item \textbf{Tooltip deteksi}, yaitu informasi tambahan yang muncul saat
+    pengguna mengarahkan kursor ke hasil deteksi, berisi kata kunci,
+    algoritma, jumlah kemunculan, dan waktu eksekusi.
+
+    \item \textbf{Ringkasan statistik}, yaitu jumlah total deteksi, waktu
+    eksekusi, jumlah deteksi per algoritma, dan daftar kata kunci yang paling
+    sering ditemukan.
+
+    \item \textbf{Ringkasan OCR}, yaitu jumlah gambar yang dipindai, jumlah
+    gambar yang terdeteksi positif, jumlah gambar yang dilewati, dan waktu
+    eksekusi OCR.
+
+    \item \textbf{Status pemindaian}, yaitu status seperti siap, sedang
+    memindai, terdeteksi, bersih, atau gagal memindai.
+\end{enumerate}
