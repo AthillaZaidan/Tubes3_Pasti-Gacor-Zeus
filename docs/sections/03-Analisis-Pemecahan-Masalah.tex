@@ -1,0 +1,221 @@
+\section{Langkah-Langkah Pemecahan Masalah}
+
+Pengembangan Judol Detector diawali dari identifikasi masalah utama:
+\textbf{bagaimana mendeteksi indikasi konten judi online pada halaman web
+secara otomatis dan efisien?} Masalah ini dipecah menjadi lima langkah
+sistematis berikut.
+
+\begin{enumerate}
+    \item \textbf{Identifikasi pola dan variasi teks.}
+    Konten judi online tidak selalu ditulis secara eksplisit. Selain kata
+    kunci tetap seperti \texttt{slot}, \texttt{gacor}, dan \texttt{jackpot},
+    terdapat pola khusus (misalnya \texttt{SLOT88}, \texttt{MAXWIN234}) serta
+    variasi penulisan dengan karakter mirip secara visual (misalnya
+    \texttt{G4C0R}, \texttt{H0KI88}).
+
+    \item \textbf{Pemilihan strategi pencocokan string.}
+    Untuk kata kunci tetap, dipilih algoritma exact matching: KMP dan
+    Boyer-Moore, Rabin-Karp, dan Aho-Corasick. Untuk pola dengan variasi visual, digunakan Regular Expression
+    dan Weighted Levenshtein Distance.
+
+    \item \textbf{Perancangan mekanisme pemindaian halaman.}
+    Sistem harus mampu membaca teks dari DOM halaman web, mengabaikan elemen
+    yang tidak relevan (\texttt{script}, \texttt{style}, \texttt{input}), serta
+    memproses teks dari gambar melalui OCR.
+
+    \item \textbf{Penyajian hasil kepada pengguna.}
+    Hasil deteksi perlu ditampilkan secara intuitif melalui highlight pada
+    elemen DOM, tooltip saat hover, dan ringkasan statistik pada popup
+    extension.
+
+    \item \textbf{Optimasi performa.}
+    Untuk menghindari pemrosesan berulang, diterapkan mekanisme deduplikasi
+    hasil antar-algoritma dan penyimpanan cache pada pemindaian teks dan OCR.
+\end{enumerate}
+
+\section{Pemetaan Masalah menjadi Elemen Algoritma}
+
+Setiap aspek masalah yang telah diidentifikasi dipetakan ke elemen algoritma
+atau modul yang bertanggung jawab menyelesaikannya. Pemetaan ini
+memperjelas peran masing-masing algoritma dalam sistem secara keseluruhan.
+
+\begin{table}[H]
+\centering
+\caption{Pemetaan masalah ke elemen algoritma}
+\label{tab:pemetaan-algoritma}
+\begin{tabular}{|p{4.5cm}|p{8.5cm}|}
+\hline
+\textbf{Aspek Masalah} & \textbf{Elemen Algoritma / Modul} \\
+\hline
+Kata kunci tetap dari \texttt{keyword.txt} &
+KMP (failure function), Boyer-Moore (bad character table), Rabin-Karp
+(rolling hash), Aho-Corasick (trie \& failure links) \\
+\hline
+Pola \texttt{<kata><angka>} (contoh: \texttt{MAXWIN234}) &
+RegEx engine JavaScript dengan pola \texttt{[\textbackslash{}p\{L\}]\{2,\}[0-9]\{2,3\}} \\
+\hline
+Variasi penulisan visual (contoh: \texttt{G4C0R}, \texttt{H0KI88}) &
+Weighted Levenshtein Distance dengan biaya substitusi karakter mirip
+yang lebih rendah \\
+\hline
+Pemrosesan teks dari gambar & OCR Tesseract.js \(\rightarrow\) pipeline
+pencocokan string \\
+\hline
+Penggabungan hasil berbagai algoritma & Modul \texttt{scanner.ts}:
+normalisasi, deduplikasi, cache LRU \\
+\hline
+Penandaan hasil pada halaman web & DOM manipulation: wrapper
+\texttt{<span>}, tooltip, blur \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{Pemetaan ke KMP.}
+Masalah yang dihadapi adalah mencari kemunculan beberapa pola (keyword) dalam
+teks yang panjang dan dinamis (DOM halaman web). KMP dipilih karena setiap
+kali terjadi ketidakcocokan, informasi yang sudah cocok sebelumnya tidak
+dibuang. Failure function memungkinkan pola digeser tepat ke posisi di mana
+prefiks yang sudah cocok bisa dimanfaatkan kembali. Hal ini sangat cocok
+untuk teks halaman web yang seringkali mengandung pengulangan huruf atau
+frasa, sehingga jumlah perbandingan karakter tetap linear.
+
+\textbf{Pemetaan ke Boyer-Moore.}
+BM dipilih karena keunggulannya pada kasus teks alfanumerik yang umum di
+halaman web. Ketika karakter pada teks tidak ditemukan dalam pola sama
+sekali, BM dapat melompati sebagian besar teks tanpa perlu membandingkan
+karakter satu per satu. Karakteristik ini sangat menguntungkan pada
+pencarian keyword pendek (misalnya \texttt{slot}, \texttt{rtp}) dalam teks
+halaman yang panjang, karena jumlah pergeseran bisa sangat besar.
+
+\textbf{Pemetaan ke Rabin-Karp.}
+RK dipilih karena kemampuannya mencari banyak pola sekaligus melalui
+pendekatan rolling hash. Setiap keyword dihitung nilai hash-nya terlebih
+dahulu; kemudian window hash pada teks digeser satu karakter per langkah.
+Ketika nilai hash window cocok dengan hash pola, verifikasi karakter
+dilakukan untuk menghindari hash collision. Pendekatan ini efisien ketika
+banyak keyword pendek perlu ditemukan dalam teks yang sama karena
+perbandingan hash jauh lebih cepat daripada perbandingan karakter penuh.
+
+\textbf{Pemetaan ke Aho-Corasick.}
+Aho-Corasick dipilih untuk skenario pencarian banyak keyword secara
+simultan. Semua keyword dikompilasi menjadi trie dengan failure links,
+sehingga teks hanya perlu dilintasi satu kali untuk menemukan seluruh
+kemunculan semua keyword sekaligus. Berbeda dengan KMP dan BM yang
+memproses satu keyword per lintasan, Aho-Corasick menyelesaikan seluruh
+daftar keyword dalam satu traversal linear, menjadikannya sangat efisien
+untuk keyword list yang panjang.
+
+\section{Fitur Fungsional dan Arsitektur Extension}
+
+\subsection{Fitur Fungsional}
+
+Judol Detector menyediakan fitur-fungsional berikut kepada pengguna.
+
+\begin{itemize}
+    \item \textbf{Pemindaian teks halaman.}
+    Content script membaca seluruh teks yang tampil pada DOM menggunakan
+    \texttt{TreeWalker}, mengabaikan elemen \texttt{script},
+    \texttt{style}, \texttt{noscript}, \texttt{textarea}, dan
+    \texttt{input} agar pemindaian fokus pada konten yang benar-benar
+    dibaca pengguna.
+
+    \item \textbf{Pemindaian multi-algoritma.}
+    Enam algoritma dijalankan secara independen pada setiap node teks:
+    KMP, Boyer-Moore, Rabin-Karp, Aho-Corasick, Regular Expression, dan
+    Weighted Levenshtein Distance.
+
+    \item \textbf{Highlight dan tooltip.}
+    Teks yang terdeteksi dibungkus dalam elemen \texttt{<span>} dengan
+    class khusus. Tooltip muncul saat pengguna mengarahkan kursor,
+    menampilkan keyword, algoritma asal, jumlah kemunculan, dan waktu
+    eksekusi.
+
+    \item \textbf{Blur otomatis.}
+    Pengguna dapat mengaktifkan efek blur pada teks terdeteksi melalui
+    popup extension. Gambar hasil OCR yang dinyatakan positif akan
+    diburamkan secara otomatis.
+
+    \item \textbf{OCR gambar.}
+    Gambar yang terlihat pada viewport diproses teksnya menggunakan
+    Tesseract.js apabila analisis konteks (nama file, \texttt{alt},
+    \texttt{aria-label}, teks container terdekat) tidak menemukan kecocokan.
+
+    \item \textbf{Rescan dan cache.}
+    Tombol rescan pada popup menghapus highlight lama dan menjalankan
+    pipeline deteksi dari awal. Hasil pemindaian disimpan dalam cache LRU
+    agar pemrosesan berulang pada teks yang sama menjadi instan.
+\end{itemize}
+
+\subsection{Arsitektur Extension}
+
+Sistem dibangun dengan tiga komponen utama yang saling berkomunikasi.
+
+\begin{enumerate}
+    \item \textbf{Content Script (\texttt{src/content/}).}
+    Bertugas menelusuri DOM, menjalankan \texttt{scanTextForJudol},
+    memasang highlight, tooltip, efek blur, serta menangani pesan dari
+    popup melalui Chrome Messaging API.
+
+    \item \textbf{Popup (\texttt{src/popup/}).}
+    Antarmuka berbasis React yang menampilkan statistik real-time:
+    total match, waktu eksekusi per algoritma, distribusi keyword, dan
+    kontrol toggle (blur, OCR).
+
+    \item \textbf{Modul Algoritma (\texttt{src/algorithms/}).}
+    Kumpulan fungsi murni yang menerima \texttt{(text, keywords)} dan
+    mengembalikan \texttt{AlgorithmResult}. Modul ini tidak bergantung
+    pada API browser sehingga dapat diuji secara mandiri melalui unit
+    test.
+\end{enumerate}
+
+\section{Contoh Ilustrasi Kasus}
+
+Berikut adalah ilustrasi bagaimana pipeline deteksi bekerja pada sebuah
+potongan teks halaman web.
+
+\textbf{Teks halaman:}
+\begin{verbatim}
+Daftar sekarang di GACOR99 dan dapatkan MAXWIN234!
+Main slot gacor hari ini. RTP tinggi, jackpot menanti.
+\end{verbatim}
+
+\textbf{Daftar keyword (\texttt{keyword.txt}):} \texttt{slot}, \texttt{gacor},
+\texttt{jackpot}, \texttt{rtp}, \texttt{bonus deposit}
+
+\textbf{Langkah deteksi:}
+\begin{enumerate}
+    \item \textbf{KMP} menemukan \texttt{"slot"} pada indeks 56--59,
+    \texttt{"gacor"} pada indeks 61--65, \texttt{"rtp"} pada indeks 77--79,
+    dan \texttt{"jackpot"} pada indeks 89--95.
+    \item \textbf{Boyer-Moore} menemukan hasil yang sama pada posisi
+    identik untuk keempat keyword tersebut.
+    \item \textbf{Rabin-Karp} menghasilkan hash match untuk \texttt{"slot"},
+    \texttt{"gacor"}, \texttt{"rtp"}, dan \texttt{"jackpot"}, lalu
+    memverifikasi karakter demi karakter hingga dinyatakan cocok.
+    \item \textbf{Aho-Corasick} menelusuri teks satu kali menggunakan trie
+    yang telah dikompilasi dari seluruh keyword, dan menemukan keempat
+    keyword yang sama pada posisi yang identik.
+    \item \textbf{RegEx} menemukan pola \texttt{GACOR99} (indeks 19--25)
+    dan \texttt{MAXWIN234} (indeks 40--48) karena keduanya terdiri atas
+    minimal dua huruf dan diikuti dua hingga tiga angka tanpa spasi.
+    \item \textbf{Weighted Levenshtein} tidak menemukan kecocokan baru
+    karena semua keyword pada daftar sudah terdeteksi secara eksak oleh
+    algoritma sebelumnya.
+\end{enumerate}
+
+\textbf{Hasil setelah deduplikasi:}
+\begin{itemize}
+    \item \texttt{GACOR99} --- deteksi oleh RegEx
+    \item \texttt{MAXWIN234} --- deteksi oleh RegEx
+    \item \texttt{slot} --- deteksi oleh KMP / Boyer-Moore / Rabin-Karp / Aho-Corasick
+    (diambil satu karena rentang sama)
+    \item \texttt{gacor} --- deteksi oleh KMP / Boyer-Moore / Rabin-Karp / Aho-Corasick
+    (diambil satu karena rentang sama)
+    \item \texttt{rtp} --- deteksi oleh KMP / Boyer-Moore / Rabin-Karp / Aho-Corasick
+    (diambil satu karena rentang sama)
+    \item \texttt{jackpot} --- deteksi oleh KMP / Boyer-Moore / Rabin-Karp / Aho-Corasick
+    (diambil satu karena rentang sama)
+\end{itemize}
+
+Setelah deduplikasi, keenam hasil tersebut di-highlight pada DOM dan
+ringkasan statistiknya ditampilkan pada popup extension.

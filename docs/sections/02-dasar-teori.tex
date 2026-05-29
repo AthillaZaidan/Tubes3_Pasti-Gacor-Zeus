@@ -152,6 +152,56 @@ kunci. Pada implementasi program, ambang batas default yang digunakan adalah
 0,78. Nilai ini dipilih agar sistem cukup sensitif terhadap variasi penulisan,
 tetapi tetap membatasi jumlah hasil positif palsu.
 
+\section{Boyer-Moore}
+
+Algoritma Boyer-Moore adalah salah satu algoritma pencocokan string yang
+bekerja dengan membandingkan karakter dari kanan ke kiri. Inti dari algoritma
+ini adalah menggunakan \textit{bad character heuristic} untuk menentukan seberapa
+jauh pola digeser ketika terjadi ketidakcocokan.
+
+\begin{quotation}
+Inti dari \textit{bad character heuristic} cukup simpel. Ketika kita
+membandingkan pola dengan teks dan menemukan karakter yang tidak cocok, karakter
+di teks tersebut disebut \textit{bad character} . Begitu
+terjadi ketidakcocokan, pola tidak digeser sedikit demi sedikit, melainkan
+langsung ``dilompatkan'' sejauh mungkin. Ada dua kemungkinan pergeseran:
+pertama, pola digeser hingga karakter buruk di teks bisa cocok dengan
+kemunculan terakhirnya di dalam pola; kedua, jika karakter tersebut sama
+sekali tidak ada di pola, maka pola langsung dilewati melewati karakter yang
+tidak cocok itu.
+\cite{geeksforgeeks_boyer_moore}
+\end{quotation}
+
+Dengan heuristic ini, algoritma dapat melompati sejumlah posisi yang tidak
+perlu diperiksa, sehingga pada kasus terbaik kompleksitasnya mendekati $O(n/m)$.
+
+
+\subsection{Algoritma Rabin-Karp}
+
+Berbeda dengan algoritma pencocokan string yang membandingkan karakter satu per
+satu secara langsung, algoritma Rabin-Karp menggunakan fungsi hash untuk
+mempercepat pencarian. Ide utamanya adalah menghitung nilai hash dari pola, lalu
+membandingkannya dengan hash setiap jendela teks yang berukuran sama dengan
+pola. Jika hash cocok, barulah dilakukan pemeriksaan karakter demi karakter
+untuk memastikan tidak terjadi \textit{hash collision}
+\cite{geeksforgeeks_rabin_karp}.
+
+Untuk menghitung hash, setiap karakter dianggap sebagai digit dalam sistem
+bilangan berbasis $d$ (biasanya 256 untuk ASCII), lalu nilai tersebut diambil
+modulo sebuah bilangan prima $q$. Modulo ini berfungsi untuk mencegah
+\textit{overflow} dan mengurangi kemungkinan tabrakan hash. Agar tidak perlu
+menghitung ulang dari nol setiap kali jendela bergeser, algoritma ini
+menggunakan teknik \textit{rolling hash}: karakter paling kiri dikeluarkan,
+sisa nilai dikalikan ulang dengan basis, lalu karakter baru di kanan
+dimasukkan. Dengan cara ini, hash jendela berikutnya bisa diperoleh dalam waktu
+konstan.
+
+Pada kasus rata-rata, algoritma ini berjalan dengan kompleksitas $O(n + m)$
+karena setiap pergeseran hanya melakukan satu kali operasi aritmetika. Namun,
+pada kasus terburuk ketika banyak tabrakan hash terjadi, kompleksitasnya bisa
+naik menjadi $O(n \times m)$ karena setiap tabrakan harus diverifikasi secara
+manual karakter per karakter.
+
 \section{Tokenisasi Teks}
 
 Sebelum pencocokan fuzzy dilakukan, teks perlu dipecah menjadi kandidat token.
