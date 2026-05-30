@@ -112,6 +112,17 @@ berdasarkan $1 - \frac{distance}{maxLength}$ dan membandingkannya dengan
 ambang default 0.78. Kecocokan eksak dapat diikutsertakan atau diabaikan
 melalui opsi \texttt{includeExact}.
 
+\subsection{Optical Character Recognition (OCR)}
+
+Fitur OCR digunakan untuk mendeteksi teks pada gambar ketika konten judol
+tidak muncul sebagai node DOM. Prosesnya dimulai dari pemilihan gambar yang
+terlihat pada viewport, lalu mengambil teks konteks dari atribut \texttt{alt},
+\texttt{aria-label}, nama file, dan container terdekat. Jika konteks belum
+memberikan hasil, sistem menjalankan OCR menggunakan Tesseract.js untuk
+mengekstrak teks dari gambar. Teks hasil OCR kemudian diproses oleh pipeline
+yang sama (RegEx, exact matching, dan Weighted Levenshtein) agar konsisten
+dengan deteksi pada teks DOM.
+
 \subsection{Aho-Corasick (\texttt{ahoCorasick.ts})}
 
 Implementasi Aho-Corasick dibangun dari dua tahap: pembuatan trie dan
@@ -372,6 +383,13 @@ TC-06 & tumgik.com/promaxwin555-page & Semua algoritma \\
 	\label{fig:tc6-all}
 \end{figure}
 
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/OCR.png}
+	\caption{OCR: Deteksi teks pada gambar hasil pencarian gambar.}
+	\label{fig:ocr}
+\end{figure}
+
 \subsection{Hasil Pengujian}
 
 \begin{table}[H]
@@ -455,6 +473,11 @@ Bagian ini membahas perbandingan performa dan akurasi antar algoritma.
 	namun biaya komputasinya tinggi. Threshold default 0.78 cukup sensitif
 	untuk variasi karakter, tetapi perlu dikontrol agar tidak memicu terlalu
 	banyak kandidat pada halaman besar.
+	\item OCR memperluas cakupan deteksi ke konten gambar (lihat Gambar
+	\ref{fig:ocr}). Hasil OCR efektif untuk menangkap teks judol yang tidak
+	tersedia sebagai DOM, namun akurasinya bergantung pada kualitas gambar
+	dan bisa menghasilkan teks parsial; karena itu tetap diperlukan validasi
+	lewat pipeline string matching untuk mengurangi false positive.
 \end{itemize}
 
 \subsection{Ringkasan Analisis}
