@@ -31,7 +31,7 @@ function bmScan(text: string, pattern: string, table: Map<string, number>): Scan
 
     if (j < 0) {
       starts.push(s)
-      s += m
+      s += 1
     } else {
       comparisons++
       const badCharShift = j - (table.get(text[s + j]) ?? -1)

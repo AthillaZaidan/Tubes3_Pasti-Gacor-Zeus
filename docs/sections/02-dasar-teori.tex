@@ -238,20 +238,22 @@ Tesseract \cite{tesseractjs}.
 Proses OCR pada program terdiri atas beberapa tahap:
 
 \begin{enumerate}
-    \item memilih gambar atau elemen visual yang terlihat pada viewport;
-    \item mengambil teks konteks dari atribut gambar, nama file, dan container
-    terdekat;
-    \item menjalankan pipeline deteksi pada teks konteks;
-    \item jika belum terdeteksi dan elemen berupa gambar yang valid, menjalankan
-    OCR dengan Tesseract.js;
+    \item memilih elemen gambar yang terlihat pada viewport;
+    \item menggambar gambar ke canvas agar pikselnya dapat diproses;
+    \item melakukan preprocessing citra sebelum OCR;
+    \item menjalankan OCR dengan Tesseract.js pada gambar hasil preprocessing;
     \item menjalankan pipeline deteksi pada teks hasil OCR;
     \item memberi penanda dan blur pada gambar yang dinyatakan positif.
 \end{enumerate}
 
-Pendekatan ini menggabungkan OCR dengan analisis konteks. Analisis konteks
-penting karena beberapa gambar promosi memiliki nama game atau kata kunci pada
-caption, atribut \texttt{alt}, atau nama file, sedangkan OCR murni tidak selalu
-mampu membaca teks pada gambar dengan akurat.
+Preprocessing dilakukan agar masukan yang diberikan ke Tesseract lebih dekat
+dengan bentuk citra yang mudah dikenali, yaitu teks gelap pada latar terang.
+Tahap preprocessing yang digunakan meliputi penskalaan gambar, penambahan
+border putih, penggabungan kanal transparansi dengan latar putih, konversi ke
+grayscale, peningkatan kontras, inversi warna apabila gambar cenderung gelap,
+serta binarisasi adaptif berdasarkan rata-rata lokal di sekitar setiap piksel.
+Pendekatan threshold lokal digunakan karena gambar promosi sering memiliki
+background warna-warni sehingga satu ambang global tidak selalu cukup stabil.
 
 \section{Highlight, Tooltip, dan Blur}
 

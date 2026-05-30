@@ -62,6 +62,33 @@ function shouldSkipTag(tagName: string) {
   )
 }
 
+function hasHiddenAncestor(element: HTMLElement) {
+  let current: HTMLElement | null = element
+
+  while (current && current !== document.body) {
+    const style = window.getComputedStyle(current)
+
+    if (
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      style.visibility === 'collapse' ||
+      style.opacity === '0'
+    ) {
+      return true
+    }
+
+    current = current.parentElement
+  }
+
+  return false
+}
+
+function isRenderedTextParent(element: HTMLElement) {
+  if (!element.isConnected) return false
+  if (hasHiddenAncestor(element)) return false
+  return element.getClientRects().length > 0 || element.getBoundingClientRect().width > 0
+}
+
 function createTooltip() {
   let tooltip = document.getElementById(TOOLTIP_ID)
 
@@ -126,6 +153,7 @@ function getVisibleTextNodes() {
       if (!parent || !text || text.trim().length === 0) return NodeFilter.FILTER_REJECT
       if (shouldSkipTag(parent.tagName)) return NodeFilter.FILTER_REJECT
       if (parent.closest(HIGHLIGHT_SELECTOR)) return NodeFilter.FILTER_REJECT
+      if (!isRenderedTextParent(parent)) return NodeFilter.FILTER_REJECT
       if (parent.closest(`#${TOOLTIP_ID}`)) return NodeFilter.FILTER_REJECT
 
       return NodeFilter.FILTER_ACCEPT
