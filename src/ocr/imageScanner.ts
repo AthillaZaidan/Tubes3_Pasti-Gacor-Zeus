@@ -241,7 +241,7 @@ export async function scanVisibleImagesForJudol(
       if (text.length === 0) continue
 
       const scanResult = scanTextForJudol(text, keywords, {
-        includeExactKeywordMatches: true,
+        includeExactKeywordMatches: false,
       })
 
       if (scanResult.matches.length > 0) {
