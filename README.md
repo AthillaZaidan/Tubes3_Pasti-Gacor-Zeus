@@ -152,7 +152,7 @@ bun install
 ### Build
 
 ```bash
-rtk bun run build
+bun run build
 ```
 
 The extension build is emitted to:
@@ -381,19 +381,19 @@ new member
 ### Build
 
 ```bash
-rtk bun run build
+bun run build
 ```
 
 ### Lint
 
 ```bash
-rtk bun run lint
+bun run lint
 ```
 
 ### Development Preview
 
 ```bash
-rtk bun run dev
+bun run dev
 ```
 
 The popup can be previewed at:
@@ -424,10 +424,10 @@ Extended capabilities:
 ## Authors
 
 ```text
-Nama Kelompok:
+Pasti_Gacor_Zeus
 
 Anggota:
-1.
-2.
-3.
+1. Athilla Zaidan Zidna Fann
+2. Ray Owen Martin
+3. Stevanus Agustav Wongso
 ```
