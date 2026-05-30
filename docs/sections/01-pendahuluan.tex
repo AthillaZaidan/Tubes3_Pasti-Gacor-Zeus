@@ -94,8 +94,9 @@ Secara umum, alur kerja program adalah sebagai berikut:
     \item \textit{Content script} mengumpulkan node teks yang terlihat pada DOM.
     \item Program menjalankan pipeline deteksi, yaitu pencocokan pola dengan
     RegEx dan pencocokan fuzzy dengan Weighted Levenshtein.
-    \item Jika OCR diaktifkan, program juga memindai gambar yang terlihat dan
-    menjalankan pipeline deteksi terhadap teks hasil OCR maupun konteks gambar.
+    \item Jika OCR diaktifkan, program juga memindai gambar yang terlihat,
+    melakukan preprocessing citra, dan menjalankan pipeline deteksi terhadap
+    teks hasil OCR.
     \item Teks atau gambar yang terdeteksi diberi penanda visual pada halaman.
     \item Popup menampilkan jumlah hasil deteksi, waktu eksekusi, perbandingan
     algoritma, kata kunci paling sering muncul, dan ringkasan OCR.
@@ -125,9 +126,8 @@ Masukan yang digunakan oleh program terdiri atas beberapa komponen berikut:
     \texttt{jackpot}, \texttt{casino online}, dan berbagai variasi frasa
     promosi lain.
 
-    \item \textbf{Gambar halaman}, yaitu elemen gambar atau elemen visual yang
-    terlihat pada viewport dan dapat diproses melalui OCR atau teks konteks
-    di sekitar gambar.
+    \item \textbf{Gambar halaman}, yaitu elemen gambar yang terlihat pada
+    viewport dan dapat diproses melalui OCR setelah melalui tahap preprocessing.
 
     \item \textbf{Pengaturan popup}, yaitu pilihan pengguna seperti menjalankan
     ulang pemindaian, mengaktifkan OCR, dan mengaktifkan blur terhadap konten
