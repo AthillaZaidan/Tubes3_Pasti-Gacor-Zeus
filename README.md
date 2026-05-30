@@ -428,5 +428,5 @@ Pasti_Gacor_Zeus
 Anggota:
 1. Athilla Zaidan Zidna Fann
 2. Ray Owen Martin
-3. Stevanus Agustav Wongso
+3. Stevanus agustaf Wongso
 ```
