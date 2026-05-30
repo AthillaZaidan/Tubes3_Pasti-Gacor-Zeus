@@ -419,7 +419,6 @@ Extended capabilities:
 
 - Aho-Corasick matcher
 - Rabin-Karp matcher
-- demo video
 
 ## Authors
 
