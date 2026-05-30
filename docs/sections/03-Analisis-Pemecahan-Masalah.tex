@@ -136,9 +136,11 @@ Judol Detector menyediakan fitur-fungsional berikut kepada pengguna.
     diburamkan secara otomatis.
 
     \item \textbf{OCR gambar.}
-    Gambar yang terlihat pada viewport diproses teksnya menggunakan
-    Tesseract.js apabila analisis konteks (nama file, \texttt{alt},
-    \texttt{aria-label}, teks container terdekat) tidak menemukan kecocokan.
+    Gambar yang terlihat pada viewport diproses langsung menggunakan
+    Tesseract.js. Sistem tidak menggunakan metadata gambar seperti nama file,
+    \texttt{alt}, \texttt{aria-label}, atau teks container sebagai sumber
+    deteksi, sehingga keputusan positif berasal dari teks yang berhasil
+    diekstraksi melalui OCR.
 
     \item \textbf{Rescan dan cache.}
     Tombol rescan pada popup menghapus highlight lama dan menjalankan
