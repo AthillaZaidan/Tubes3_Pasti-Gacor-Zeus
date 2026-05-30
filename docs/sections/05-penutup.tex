@@ -1,0 +1,27 @@
+\section{Penutup}
+
+Bab ini berisi ringkasan hasil yang diperoleh serta saran untuk pengembangan
+lebih lanjut.
+
+\subsection{Kesimpulan}
+
+\begin{enumerate}
+	\item \textbf{Judol Detector berhasil menerapkan algoritma pencocokan string}
+	(KMP, Boyer-Moore, Aho-Corasick, Rabin-Karp, RegEx, dan Weighted Levenshtein)
+	untuk mendeteksi indikasi konten judol pada halaman web.
+	\item \textbf{Algoritma RegEx dan exact matching memberikan performa terbaik}
+	untuk halaman umum, sedangkan Weighted Levenshtein efektif menangkap
+	variasi visual namun memiliki biaya komputasi tinggi.
+	\item \textbf{Hasil pengujian menunjukkan kebutuhan pengendalian false positive,}
+	terutama pada pola RegEx yang dapat menangkap token umum tanpa konteks.
+\end{enumerate}
+
+\subsection{Saran}
+
+\begin{enumerate}
+	\item \textbf{Tambahkan filter konteks untuk RegEx} misalnya pengecualian
+	prefix umum atau verifikasi dengan keyword sekitar agar false positive
+	berkurang.
+	\item \textbf{Optimasi Weighted Levenshtein dengan pembatasan kandidat} dan
+	pengaturan threshold adaptif agar performa tetap responsif pada halaman besar.
+\end{enumerate}
