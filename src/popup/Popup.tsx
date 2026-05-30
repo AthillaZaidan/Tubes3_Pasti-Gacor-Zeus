@@ -70,11 +70,16 @@ export function Popup() {
   const [isScanning, setIsScanning] = useState(false)
   const [storageKey, setStorageKey] = useState<string | null>(null)
   const [ocrEnabled, setOcrEnabled] = useState(false)
+  const [algorithmFilter, setAlgorithmFilter] = useState<MatchAlgorithm[]>([])
 
   const topKeywords = useMemo(() => getTopKeywords(summary.keywordCounts), [summary.keywordCounts])
   const maxAlgorithmCount = Math.max(
     1,
     ...algorithms.map((algorithm) => summary.algorithmCounts[algorithm] ?? 0),
+  )
+  const algorithmFilterSet = useMemo(
+    () => new Set(algorithmFilter),
+    [algorithmFilter],
   )
 
   const getActiveTab = useCallback(async () => {
@@ -178,6 +183,34 @@ export function Popup() {
     }
   }
 
+  async function handleAlgorithmFilterChange(next: MatchAlgorithm[]) {
+    setAlgorithmFilter(next)
+
+    try {
+      const response = await sendCommand({
+        type: 'JUDOL_SET_ALGORITHM_FILTER',
+        algorithms: next,
+      })
+
+      if (isScanResponse(response) && response.summary) {
+        setSummary(response.summary)
+        const key = storageKey ?? (await getActiveTabStorageKey())
+        if (key) await chrome.storage.local.set({ [key]: response.summary })
+        setStatus(response.summary.totalMatches > 0 ? 'Detected' : 'Clean')
+      }
+    } catch {
+      setStatus('Filter failed')
+    }
+  }
+
+  function toggleAlgorithmFilter(algorithm: MatchAlgorithm) {
+    const next = algorithmFilterSet.has(algorithm)
+      ? algorithmFilter.filter((item) => item !== algorithm)
+      : [...algorithmFilter, algorithm]
+
+    void handleAlgorithmFilterChange(next)
+  }
+
   async function handleBlurChange(enabled: boolean) {
     try {
       await sendCommand({ type: 'JUDOL_SET_BLUR', blur: enabled })
@@ -264,6 +297,39 @@ export function Popup() {
             )
           })}
         </div>
+      </section>
+
+      <section className={`${panelClass} grid gap-3 p-4`}>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="m-0 text-lg leading-[1.1] font-bold tracking-normal">
+            Filter highlights
+          </h2>
+          <span className="text-xs leading-[1.2] text-[#999999]">
+            {algorithmFilter.length === 0 ? 'All algorithms' : 'Intersection'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          {algorithms.map((algorithm) => (
+            <label
+              className="flex items-center gap-2 rounded-xl bg-[#1c1c1c] px-3 py-2 text-xs font-bold"
+              key={algorithm}
+            >
+              <input
+                className="size-4 accent-[#0099ff] outline-offset-3 focus-visible:outline-2 focus-visible:outline-[#0099ff]"
+                type="checkbox"
+                checked={algorithmFilterSet.has(algorithm)}
+                onChange={() => toggleAlgorithmFilter(algorithm)}
+              />
+              <span>{formatAlgorithmName(algorithm)}</span>
+            </label>
+          ))}
+        </div>
+
+        <p className="m-0 text-xs leading-[1.4] text-[#999999]">
+          Leave all unchecked to show every match. Select multiple algorithms to show only
+          words detected by all selected algorithms.
+        </p>
       </section>
 
       <section className={`${panelClass} grid gap-4 p-4`}>

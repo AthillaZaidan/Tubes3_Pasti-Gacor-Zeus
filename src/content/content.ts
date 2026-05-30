@@ -10,9 +10,10 @@ import contentStyles from '../styles/content.css?inline'
 import { scanVisibleImagesForJudol } from '../ocr/imageScanner'
 
 type PopupCommand = {
-  type: 'JUDOL_SCAN' | 'JUDOL_CLEAR' | 'JUDOL_SET_BLUR'
+  type: 'JUDOL_SCAN' | 'JUDOL_CLEAR' | 'JUDOL_SET_BLUR' | 'JUDOL_SET_ALGORITHM_FILTER'
   blur?: boolean
   includeOcr?: boolean
+  algorithms?: MatchAlgorithm[]
 }
 
 type ScanSummary = {
@@ -30,6 +31,17 @@ const HIGHLIGHT_SELECTOR = '.judol-highlight'
 const OCR_IMAGE_SELECTOR = '.judol-ocr-image'
 const keywords = parseKeywordText(keywordText)
 let currentTextBlurEnabled = false
+let activeAlgorithmFilter: MatchAlgorithm[] = []
+let lastIncludeOcr = false
+
+type FilteredScan = {
+  matches: DetectionMatch[]
+  totalMatches: number
+  algorithmCounts: Partial<Record<MatchAlgorithm, number>>
+  keywordCounts: Record<string, number>
+  algorithmLabels: Map<string, string>
+  filterLabel: string | null
+}
 
 function ensureContentStyles() {
   if (document.getElementById(STYLE_ID)) return
@@ -114,6 +126,7 @@ function getVisibleTextNodes() {
       if (!parent || !text || text.trim().length === 0) return NodeFilter.FILTER_REJECT
       if (shouldSkipTag(parent.tagName)) return NodeFilter.FILTER_REJECT
       if (parent.closest(HIGHLIGHT_SELECTOR)) return NodeFilter.FILTER_REJECT
+      if (parent.closest(`#${TOOLTIP_ID}`)) return NodeFilter.FILTER_REJECT
 
       return NodeFilter.FILTER_ACCEPT
     },
@@ -148,6 +161,93 @@ function createHighlight(match: DetectionMatch, results: AlgorithmResult[]) {
   return highlight
 }
 
+function getMatchKey(match: DetectionMatch) {
+  return `${match.startIndex}:${match.endIndex}`
+}
+
+function applyAlgorithmFilter(
+  scanResult: ReturnType<typeof scanTextForJudol>,
+  algorithms: MatchAlgorithm[],
+): FilteredScan {
+  const matches: DetectionMatch[] = []
+  const algorithmCounts: Partial<Record<MatchAlgorithm, number>> = {}
+  const keywordCounts: Record<string, number> = {}
+  const algorithmLabels = new Map<string, string>()
+  const selected = new Set(algorithms)
+
+  if (selected.size === 0) {
+    for (const result of scanResult.results) {
+      algorithmCounts[result.algorithm] =
+        (algorithmCounts[result.algorithm] ?? 0) + result.count
+    }
+
+    for (const match of scanResult.matches) {
+      keywordCounts[match.keyword] = (keywordCounts[match.keyword] ?? 0) + 1
+    }
+
+    return {
+      matches: scanResult.matches,
+      totalMatches: scanResult.totalMatches,
+      algorithmCounts,
+      keywordCounts,
+      algorithmLabels,
+      filterLabel: null,
+    }
+  }
+
+  const label = Array.from(selected).join(' + ')
+  const groups = new Map<string, { match: DetectionMatch; algorithms: Set<MatchAlgorithm> }>()
+
+  for (const result of scanResult.results) {
+    if (!selected.has(result.algorithm)) continue
+
+    for (const match of result.matches) {
+      const key = getMatchKey(match)
+      const existing = groups.get(key)
+
+      if (existing) {
+        existing.algorithms.add(result.algorithm)
+        continue
+      }
+
+      groups.set(key, { match, algorithms: new Set([result.algorithm]) })
+    }
+  }
+
+  for (const group of groups.values()) {
+    let hasAll = true
+
+    for (const algorithm of selected) {
+      if (!group.algorithms.has(algorithm)) {
+        hasAll = false
+        break
+      }
+    }
+
+    if (!hasAll) continue
+
+    const key = getMatchKey(group.match)
+    matches.push(group.match)
+    algorithmLabels.set(key, label)
+    keywordCounts[group.match.keyword] = (keywordCounts[group.match.keyword] ?? 0) + 1
+
+    for (const algorithm of selected) {
+      algorithmCounts[algorithm] = (algorithmCounts[algorithm] ?? 0) + 1
+    }
+  }
+
+  matches.sort((left, right) => left.startIndex - right.startIndex)
+
+  return {
+    matches,
+    totalMatches: matches.length,
+    algorithmCounts,
+    keywordCounts,
+    algorithmLabels,
+    filterLabel: label,
+  }
+}
+
 function getNonOverlappingMatches(matches: DetectionMatch[]) {
   const selected: DetectionMatch[] = []
   let cursor = 0
@@ -166,6 +266,7 @@ function replaceTextNodeWithHighlights(
   text: string,
   matches: DetectionMatch[],
   results: AlgorithmResult[],
+  algorithmLabels: Map<string, string>,
 ) {
   const fragment = document.createDocumentFragment()
   let cursor = 0
@@ -175,7 +276,10 @@ function replaceTextNodeWithHighlights(
       fragment.append(document.createTextNode(text.slice(cursor, match.startIndex)))
     }
 
-    fragment.append(createHighlight(match, results))
+    const highlight = createHighlight(match, results)
+    const label = algorithmLabels.get(getMatchKey(match))
+    if (label) highlight.dataset.algorithm = label
+    fragment.append(highlight)
     cursor = match.endIndex
   }
 
@@ -196,26 +300,32 @@ function emptyScanSummary(): ScanSummary {
   }
 }
 
-function mergeScanSummary(summary: ScanSummary, result: ReturnType<typeof scanTextForJudol>) {
-  summary.totalMatches += result.totalMatches
+function mergeScanSummary(
+  summary: ScanSummary,
+  result: ReturnType<typeof scanTextForJudol>,
+  filtered: FilteredScan,
+) {
+  summary.totalMatches += filtered.totalMatches
   summary.executionTimeMs += result.executionTimeMs
 
   for (const algorithmResult of result.results) {
+    const filteredCount = filtered.algorithmCounts[algorithmResult.algorithm]
     summary.algorithmCounts[algorithmResult.algorithm] =
-      (summary.algorithmCounts[algorithmResult.algorithm] ?? 0) + algorithmResult.count
+      (summary.algorithmCounts[algorithmResult.algorithm] ?? 0) + (filteredCount ?? 0)
     summary.algorithmExecutionTimes[algorithmResult.algorithm] =
       (summary.algorithmExecutionTimes[algorithmResult.algorithm] ?? 0) +
       algorithmResult.executionTimeMs
   }
 
-  for (const match of result.matches) {
-    summary.keywordCounts[match.keyword] = (summary.keywordCounts[match.keyword] ?? 0) + 1
+  for (const [keyword, count] of Object.entries(filtered.keywordCounts)) {
+    summary.keywordCounts[keyword] = (summary.keywordCounts[keyword] ?? 0) + count
   }
 }
 
 function markOcrImage(
   image: HTMLElement,
   result: ReturnType<typeof scanTextForJudol>,
+  algorithmLabel: string | null,
 ) {
   const firstMatch = result.matches[0]
   const firstResult = result.results.find((algorithmResult) => {
@@ -224,7 +334,7 @@ function markOcrImage(
 
   image.classList.add('judol-ocr-image')
   image.dataset.keyword = firstMatch?.keyword ?? 'OCR match'
-  image.dataset.algorithm = `OCR + ${firstMatch?.algorithm ?? 'scanner'}`
+  image.dataset.algorithm = `OCR + ${algorithmLabel ?? firstMatch?.algorithm ?? 'scanner'}`
   image.dataset.count = String(result.totalMatches)
   image.dataset.time = `${(firstResult?.executionTimeMs ?? result.executionTimeMs).toFixed(2)} ms`
   image.dataset.judolBlur = 'true'
@@ -235,16 +345,19 @@ function markOcrImage(
 function highlightTextNode(node: Text, summary: ScanSummary) {
   const text = node.textContent ?? ''
   const scanResult = scanTextForJudol(text, keywords, { includeExactKeywordMatches: true })
-  const matches = getNonOverlappingMatches(scanResult.matches)
+  const filtered = applyAlgorithmFilter(scanResult, activeAlgorithmFilter)
+  const matches = getNonOverlappingMatches(filtered.matches)
 
-  mergeScanSummary(summary, scanResult)
+  mergeScanSummary(summary, scanResult, filtered)
   if (matches.length === 0) return
-  replaceTextNodeWithHighlights(node, text, matches, scanResult.results)
+  replaceTextNodeWithHighlights(node, text, matches, scanResult.results, filtered.algorithmLabels)
 }
 
 async function scanPage(includeOcr = false) {
+  lastIncludeOcr = includeOcr
   ensureContentStyles()
   clearHighlights()
+  document.body.normalize()
 
   const summary = emptyScanSummary()
 
@@ -257,8 +370,11 @@ async function scanPage(includeOcr = false) {
     const ocrResult = await scanVisibleImagesForJudol(keywords)
 
     for (const imageMatch of ocrResult.matches) {
-      mergeScanSummary(summary, imageMatch.scanResult)
-      markOcrImage(imageMatch.image, imageMatch.scanResult)
+      const filtered = applyAlgorithmFilter(imageMatch.scanResult, activeAlgorithmFilter)
+      if (filtered.totalMatches === 0) continue
+
+      mergeScanSummary(summary, imageMatch.scanResult, filtered)
+      markOcrImage(imageMatch.image, imageMatch.scanResult, filtered.filterLabel)
     }
 
     summary.ocr = {
@@ -302,6 +418,14 @@ chrome.runtime?.onMessage?.addListener((message, _sender, sendResponse) => {
 
   if (message.type === 'JUDOL_SCAN') {
     void scanPage(Boolean(message.includeOcr))
+      .then((summary) => sendResponse({ ok: true, summary }))
+      .catch(() => sendResponse({ ok: false, summary: emptyScanSummary() }))
+    return true
+  }
+
+  if (message.type === 'JUDOL_SET_ALGORITHM_FILTER') {
+    activeAlgorithmFilter = message.algorithms ?? []
+    void scanPage(lastIncludeOcr)
       .then((summary) => sendResponse({ ok: true, summary }))
       .catch(() => sendResponse({ ok: false, summary: emptyScanSummary() }))
     return true

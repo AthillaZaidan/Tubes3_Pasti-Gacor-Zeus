@@ -1,0 +1,475 @@
+\section{Implementasi Algoritma}
+
+Bagian ini menjelaskan implementasi algoritma pencocokan string yang
+digunakan pada Judol Detector. Fokus penjelasan adalah modul di folder
+\texttt{src/algorithms} yang bersifat mandiri, tidak bergantung pada API
+browser, dan mengembalikan struktur hasil yang konsisten.
+
+Seluruh fungsi pencocokan memiliki keluaran bertipe
+\texttt{AlgorithmResult} yang berisi daftar hasil \texttt{DetectionMatch},
+jumlah kecocokan, waktu eksekusi, dan (bila relevan) jumlah perbandingan
+karakter. Struktur data ini didefinisikan di \texttt{types.ts} agar hasil
+setiap algoritma dapat dibandingkan dan digabungkan secara seragam.
+
+\subsection{Struktur Data Hasil Deteksi}
+
+Struktur utama yang digunakan oleh semua algoritma adalah sebagai berikut:
+
+\begin{itemize}
+	\item \texttt{MatchAlgorithm} mendefinisikan nama algoritma
+	(\texttt{KMP}, \texttt{Boyer-Moore}, \texttt{RegEx},
+	\texttt{Weighted-Levenshtein}, \texttt{Aho-Corasick}, \texttt{Rabin-Karp}).
+	\item \texttt{DetectionMatch} menyimpan \texttt{keyword}, \texttt{matchedText},
+	indeks awal dan akhir, serta informasi tambahan seperti \texttt{score}
+	atau \texttt{comparisons} bila tersedia.
+	\item \texttt{AlgorithmResult} memuat algoritma asal, daftar hasil,
+	jumlah hasil, waktu eksekusi, dan total perbandingan.
+\end{itemize}
+
+Dengan struktur ini, modul pemindaian dapat menggabungkan hasil tanpa perlu
+mengetahui detail internal setiap algoritma.
+
+\subsection{Knuth-Morris-Pratt (\texttt{kmp.ts})}
+
+Implementasi KMP dibangun melalui dua langkah utama: pembuatan
+\textit{failure table} dan proses pemindaian.
+
+\begin{itemize}
+	\item \textbf{Failure table.} Fungsi \texttt{buildFailureTable} menghitung
+	panjang prefiks terpanjang yang juga merupakan sufiks untuk setiap posisi
+	pada pola. Tabel ini digunakan untuk menentukan posisi geser ketika
+	terjadi ketidakcocokan, sehingga perbandingan karakter tidak mengulang
+	dari awal.
+
+	\item \textbf{Pemindaian teks.} Fungsi \texttt{searchKmp} menelusuri teks
+	dan pola dengan dua indeks. Setiap kali pola cocok penuh, posisi awal
+	dicatat lalu indeks pola digeser menggunakan failure table.
+\end{itemize}
+
+Fungsi publik \texttt{findKmpMatches} melakukan normalisasi sederhana dengan
+\texttt{toLowerCase()}, lalu memindai setiap keyword pada teks. Hasil disusun
+ke dalam daftar \texttt{DetectionMatch} beserta jumlah perbandingan karakter.
+
+\subsection{Boyer-Moore (\texttt{boyerMoore.ts})}
+
+Algoritma Boyer-Moore menggunakan \textit{bad character heuristic}.
+Implementasi ini mencakup dua komponen:
+
+\begin{itemize}
+	\item \textbf{Bad character table.} Fungsi \texttt{buildBadCharTable}
+	menyimpan posisi kemunculan terakhir setiap karakter pada pola.
+
+	\item \textbf{Pemindaian.} Fungsi \texttt{bmScan} membandingkan karakter
+	dari kanan ke kiri. Saat mismatch terjadi, pergeseran dihitung dari
+	selisih posisi karakter mismatch di pola dan kemunculan terakhirnya pada
+	tabel. Jika karakter tidak ada pada pola, pergeseran dilakukan sejauh
+	mungkin.
+\end{itemize}
+
+Sebelum pemindaian, teks dan pola dinormalisasi ke bentuk \texttt{NFKC} dan
+huruf kecil agar konsisten terhadap variasi Unicode. Hasil akhir disusun
+ke \texttt{AlgorithmResult} lengkap dengan jumlah perbandingan karakter.
+
+\subsection{RegEx Matching (\texttt{regexMatcher.ts})}
+
+Pola RegEx yang digunakan adalah:\\
+\texttt{(?<![\textbackslash{}p\{L\}\textbackslash{}p\{N\}\_])[\textbackslash{}p\{L\}]\{2,\}[0-9]\{2,3\}(?![\textbackslash{}p\{L\}\textbackslash{}p\{N\}\_])}.
+Pola ini mendeteksi token huruf minimal dua karakter yang diikuti dua atau
+tiga digit, dengan batas kiri dan kanan agar tidak berada di tengah token
+lain.
+
+Fungsi \texttt{findJudolPatternMatches} memanggil \texttt{matchAll} untuk
+menemukan semua kemunculan dan menyusun hasil ke \texttt{DetectionMatch}.
+Karena RegEx tidak melakukan perbandingan karakter eksplisit, informasi
+\texttt{comparisons} tidak diisi.
+
+\subsection{Weighted Levenshtein Distance (\texttt{weightedLevenshtein.ts})}
+
+Implementasi Weighted Levenshtein dibangun dengan tabel dinamis dua dimensi.
+Biaya operasi edit menggunakan parameter berikut:
+
+\begin{itemize}
+	\item biaya substitusi karakter sama: 0,
+	\item biaya substitusi karakter mirip: 0.25 (default),
+	\item biaya substitusi karakter berbeda: 1,
+	\item biaya insert dan delete: 1.
+\end{itemize}
+
+Karakter mirip visual dikelompokkan pada \texttt{VISUAL\_GROUPS}
+misalnya \texttt{o/0}, \texttt{a/4}, \texttt{e/3}, \texttt{s/5},
+dan variasi Unicode terkait. Fungsi \texttt{getVisualSubstitutionCost}
+memutuskan biaya substitusi berdasarkan kelompok tersebut.
+
+Proses pencocokan tidak dilakukan pada seluruh teks, tetapi pada kandidat
+token. Token diperoleh melalui pola \texttt{TOKEN\_PATTERN} yang menangkap
+huruf, angka, garis bawah, dan simbol tertentu. Untuk keyword multi-kata,
+teks dibentuk menjadi jendela token dengan panjang yang sama. Setiap kandidat
+yang panjangnya terlalu jauh dari keyword disaring terlebih dahulu untuk
+mengurangi biaya komputasi.
+
+Fungsi \texttt{findWeightedLevenshteinMatches} menghitung nilai similarity
+berdasarkan $1 - \frac{distance}{maxLength}$ dan membandingkannya dengan
+ambang default 0.78. Kecocokan eksak dapat diikutsertakan atau diabaikan
+melalui opsi \texttt{includeExact}.
+
+\subsection{Aho-Corasick (\texttt{ahoCorasick.ts})}
+
+Implementasi Aho-Corasick dibangun dari dua tahap: pembuatan trie dan
+pembuatan \textit{failure links}.
+
+\begin{itemize}
+	\item \textbf{Trie keyword.} Fungsi \texttt{buildTrie} membangun struktur
+	trie dari seluruh keyword, dan setiap node menyimpan daftar keyword yang
+	berakhir di node tersebut.
+
+	\item \textbf{Failure links.} Fungsi \texttt{buildFailureLinks} menggunakan
+	BFS untuk menambahkan tautan kegagalan yang mengarahkan ke prefiks terpanjang
+	yang juga merupakan sufiks.
+\end{itemize}
+
+Fungsi \texttt{findAhoCorasickMatches} menelusuri teks satu kali dan, ketika
+mencapai node dengan \texttt{outputs}, mencatat seluruh keyword yang cocok.
+Algoritma ini cocok untuk pencarian banyak keyword sekaligus dengan biaya
+linear terhadap panjang teks dan jumlah hasil.
+
+\subsection{Rabin-Karp (\texttt{rabinKarp.ts})}
+
+Rabin-Karp pada implementasi ini menggunakan \textit{rolling hash} dengan
+basis 31 dan modulo \texttt{1000000007}. Prosesnya meliputi:
+
+\begin{itemize}
+	\item menghitung hash pola dan hash jendela awal,
+	\item menggeser jendela dengan menghapus karakter kiri dan menambahkan
+	karakter kanan (rolling),
+	\item melakukan verifikasi karakter demi karakter jika nilai hash sama
+	untuk mencegah \textit{hash collision}.
+\end{itemize}
+
+Fungsi \texttt{findRabinKarpMatches} melakukan normalisasi \texttt{NFKC} dan
+huruf kecil sebelum pemindaian. Jumlah perbandingan dihitung dari jumlah
+pemeriksaan hash dan verifikasi karakter.
+
+\subsection{Catatan Implementasi Umum}
+
+Beberapa keputusan implementasi dilakukan agar hasil algoritma konsisten dan
+siap digabungkan oleh pipeline pemindaian:
+
+\begin{itemize}
+	\item Normalisasi huruf kecil dilakukan pada KMP, Boyer-Moore,
+	Aho-Corasick, dan Rabin-Karp untuk membuat pencocokan tidak sensitif
+	terhadap kapitalisasi.
+	\item Normalisasi Unicode \texttt{NFKC} digunakan pada Boyer-Moore dan
+	Rabin-Karp untuk menyamakan representasi karakter yang tampak sama.
+	\item Semua hasil selalu menyimpan \texttt{startIndex} dan \texttt{endIndex}
+	pada teks asli agar proses highlight dapat bekerja tanpa kehilangan
+	konteks.
+	\item Pengukuran waktu eksekusi dilakukan dengan \texttt{performance.now()}
+	agar presisi cukup untuk membandingkan algoritma pada skenario nyata.
+\end{itemize}
+
+Bagian ini menjadi fondasi implementasi pipeline deteksi pada content script
+karena semua algoritma menyediakan format hasil yang seragam dan dapat
+digabungkan melalui mekanisme deduplikasi dan statistik.
+
+\section{Spesifikasi Teknis Program}
+
+Bagian ini merangkum struktur data, fungsi utama, dan prosedur yang dibangun
+pada sistem.
+
+\subsection{Struktur Data}
+
+\begin{table}[H]
+\centering
+\caption{Ringkasan struktur data utama}
+\label{tab:struktur-data}
+\begin{tabular}{|p{4cm}|p{9cm}|}
+\hline
+\textbf{Struktur} & \textbf{Deskripsi} \\
+\hline
+\texttt{MatchAlgorithm} & Enumerasi nama algoritma yang digunakan. \\
+\hline
+\texttt{DetectionMatch} & Hasil satu kecocokan: keyword, teks terdeteksi, indeks, dan metadata. \\
+\hline
+\texttt{AlgorithmResult} & Ringkasan hasil satu algoritma: daftar match, count, waktu eksekusi. \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Fungsi dan Prosedur Utama}
+
+Fungsi dan prosedur utama yang dibangun meliputi:
+
+\begin{itemize}
+	\item \texttt{findKmpMatches}: pencocokan eksak menggunakan KMP.
+	\item \texttt{buildFailureTable}: membangun failure table untuk KMP.
+	\item \texttt{findBoyerMooreMatches}: pencocokan eksak menggunakan Boyer-Moore.
+	\item \texttt{buildBadCharTable}: tabel kemunculan terakhir karakter pada Boyer-Moore.
+	\item \texttt{findJudolPatternMatches}: deteksi pola RegEx \texttt{<kata><angka>}.
+	\item \texttt{findWeightedLevenshteinMatches}: pencocokan fuzzy berbobot untuk algoritma Weighted Levenshtein.
+	\item \texttt{calculateWeightedLevenshtein}: menghitung jarak berbobot dan similarity untuk algoritma Weighted Levenshtein.
+	\item \texttt{getVisualSubstitutionCost}: biaya substitusi untuk karakter mirip visual untuk Weighted Levenshtein.
+	\item \texttt{findAhoCorasickMatches}: pencocokan multi-keyword dengan trie untuk algoritma Aho-Corasick.
+	\item \texttt{buildTrie} dan \texttt{buildFailureLinks}: konstruksi trie dan failure links untuk algoritma Aho-Corasick.
+	\item \texttt{findRabinKarpMatches}: pencocokan berbasis rolling hash untuk algoritma Rabin-Karp.
+	\item \texttt{rkScan} dan \texttt{computeHash}: pemindaian dan hash window Rabin-Karp.
+\end{itemize}
+
+\subsection{Prosedur Utama Pipeline}
+
+\begin{enumerate}
+	\item Membaca daftar keyword dari \texttt{keyword.txt}.
+	\item Mengambil node teks dari DOM yang terlihat.
+	\item Menjalankan pencocokan eksak (KMP, Boyer-Moore, Aho-Corasick, Rabin-Karp).
+	\item Menjalankan RegEx untuk pola \texttt{<kata><angka>}.
+	\item Menjalankan Weighted Levenshtein pada kandidat token.
+	\item Melakukan deduplikasi hasil dan menyiapkan statistik.
+	\item Mengirim hasil ke modul highlight dan popup.
+\end{enumerate}
+
+\section{Tata Cara Penggunaan Extension}
+
+Bagian ini menjelaskan antarmuka dan fitur yang tersedia bagi pengguna.
+
+\subsection{Memuat Extension}
+
+\begin{enumerate}
+	\item Jalankan proses build hingga menghasilkan folder \texttt{dist/}.
+	\item Buka \textit{Extensions} pada Chromium dan aktifkan \textit{Developer Mode}.
+	\item Pilih \textit{Load unpacked} lalu arahkan ke folder \texttt{dist/}.
+\end{enumerate}
+
+\subsection{Antarmuka Popup}
+
+\begin{itemize}
+	\item Tombol \textbf{Scan/Rescan} untuk memulai pemindaian.
+	\item Toggle \textbf{Blur} untuk menyamarkan konten terdeteksi.
+	\item Toggle \textbf{OCR} untuk memindai teks pada gambar (jika tersedia).
+	\item \textbf{Filter highlights} untuk memilih algoritma yang ditampilkan secara
+	\textit{intersection}.
+	\item Ringkasan statistik: total match, per algoritma, dan waktu eksekusi.
+\end{itemize}
+
+\subsection{Interaksi pada Halaman}
+
+\begin{itemize}
+	\item Elemen terdeteksi diberi highlight.
+	\item Hover pada highlight menampilkan tooltip berisi keyword, algoritma,
+	jumlah kemunculan, dan waktu eksekusi.
+	\item Rescan menghapus highlight lama dan memperbarui statistik.
+\end{itemize}
+
+\section{Pengujian}
+
+Bagian ini memuat beberapa kasus uji dengan variasi algoritma dan jenis
+halaman. Tabel berikut adalah template yang dapat diisi dengan hasil aktual.
+
+\begin{table}[H]
+\centering
+\caption{Daftar kasus uji}
+\label{tab:kasus-uji}
+\begin{tabular}{|p{1.2cm}|p{5.5cm}|p{6cm}|}
+\hline
+\textbf{ID} & \textbf{Jenis Halaman} & \textbf{Algoritma Utama} \\
+\hline
+TC-01 & haloowner.pages.dev & KMP dan Aho-Corasick \\
+\hline
+TC-02 & \"maxwin234\" di search bar & RegEx \\
+\hline
+TC-03 & heylink.me/88omegabet & Weighted Levenshtein dan RegEx \\
+\hline
+TC-04 & \"AB1 A9\" di search bar & RegEx \\
+\hline
+TC-05 & one-vv5378.com/casino?p=3o0j & Boyer-Moore dan Rabin-Karp \\
+\hline
+TC-06 & tumgik.com/promaxwin555-page & Semua algoritma \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Dokumentasi Kasus Uji}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC1_all.png}
+	\caption{TC-01: Hasil pemindaian dengan semua algoritma aktif.}
+	\label{fig:tc1-all}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC1_KMP.png}
+	\caption{TC-01: Filter highlight hanya KMP.}
+	\label{fig:tc1-kmp}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC1_AC.png}
+	\caption{TC-01: Filter highlight hanya Aho-Corasick.}
+	\label{fig:tc1-ac}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC2_regex.png}
+	\caption{TC-02: Deteksi pola \texttt{MAXWIN234} oleh RegEx.}
+	\label{fig:tc2}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC2_keyword.png}
+	\caption{TC-02: Hasil perbandingan keyword.}
+	\label{fig:tc2}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC3_WL.png}
+	\caption{TC-03: Deteksi fuzzy dengan Weighted Levenshtein}
+	\label{fig:tc3-wl}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC3_regex.png}
+	\caption{TC-03: Deteksi dengan RegEx}
+	\label{fig:tc3-wl}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC4.png}
+	\caption{TC-04: Contoh false positive pola RegEx pada token umum.}
+	\label{fig:tc4}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC5_all.png}
+	\caption{TC-05: Deteksi dengan semua algoritma dalam webpage.}
+	\label{fig:tc5-all}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC5_BM.png}
+	\caption{TC-05: Deteksi dengan algoritma Boyer-Moore.}
+	\label{fig:tc5-bm}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC5_RK.png}
+	\caption{TC-05: Deteksi dengan semua algoritma dalam webpage.}
+	\label{fig:tc5-rk}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.92\textwidth]{pengujian/TC6_all.png}
+	\caption{TC-06: Deteksi dengan semua algoritma dalam webpage.}
+	\label{fig:tc6-all}
+\end{figure}
+
+\subsection{Hasil Pengujian}
+
+\begin{table}[H]
+\centering
+\caption{Hasil pengujian}
+\label{tab:hasil-uji}
+\begin{tabular}{|p{1.5cm}|p{4.2cm}|p{3.5cm}|p{2.5cm}|}
+\hline
+\textbf{ID TC} & \textbf{Jenis Algoritma} & \textbf{Banyak Match} & \textbf{Waktu (ms)} \\
+\hline
+TC-01 & KMP & 8 & 12.10 \\
+\hline
+TC-01 & Aho-Corasick & 8 & 22.8 \\
+\hline
+TC-02 & RegEx & 23 & 7.0 \\
+\hline
+TC-03 & RegEx & 4 & 8.8 \\
+\hline
+TC-03 & Weighted Levenshtein & 4 & 7373.0 \\
+\hline
+TC-04 & RegEx & 14 & 6.5 \\
+\hline
+TC-05 & Boyer-Moore & 5 & 16.1 \\
+\hline
+TC-05 & Rabin-Karp & 5 & 23.5 \\
+\hline
+TC-06 & KMP & 14 & 33.3 \\
+\hline
+TC-06 & Aho-Corasick & 14 & 52.2 \\
+\hline
+TC-06 & RegEx & 10 & 5.1 \\
+\hline
+TC-06 & Boyer-Moore & 15 & 12.9 \\
+\hline
+TC-06 & Rabin-Karp & 15 & 25.4 \\
+\hline
+TC-06 & Weighted Levenshtein & 4 & 2122.8 \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Analisis Hasil Pengujian}
+
+Bagian ini membahas perbandingan performa dan akurasi antar algoritma.
+
+\subsection{Perbandingan Performa}
+
+\begin{itemize}
+	\item RegEx konsisten menjadi yang tercepat pada semua kasus uji
+	(5.1--8.8 ms), karena hanya melakukan pencocokan pola tunggal pada teks.
+	Keunggulan: sangat cepat untuk pola sederhana. Kelemahan: mudah memicu
+	false positive tanpa konteks.
+	\item Algoritma exact matching (KMP, Boyer-Moore, Aho-Corasick, Rabin-Karp)
+	berada pada rentang puluhan milidetik; KMP cenderung lebih cepat daripada
+	Aho-Corasick pada kasus dengan keyword terbatas (TC-01), sedangkan
+	Aho-Corasick tetap stabil ketika jumlah keyword bertambah (TC-06).
+	Keunggulan KMP: stabil dan sederhana untuk satu pola. Kelemahan: perlu
+	memindai per keyword. Keunggulan Boyer-Moore: lompatan besar saat mismatch,
+	baik untuk pola pendek. Kelemahan: performa bisa turun pada teks repetitif.
+	Keunggulan Aho-Corasick: satu lintasan untuk banyak keyword. Kelemahan:
+	overhead trie dan failure links. Keunggulan Rabin-Karp: hash cepat untuk
+	window. Kelemahan: tetap perlu verifikasi saat hash cocok.
+	\item Weighted Levenshtein memiliki waktu paling besar (2.1--7.3 detik)
+	karena menghitung jarak berbobot pada banyak kandidat token; hal ini
+	menunjukkan kebutuhan pembatasan kandidat agar tetap responsif.
+	Keunggulan: menangkap variasi visual yang tidak terdeteksi eksak.
+	Kelemahan: biaya komputasi tinggi pada teks panjang.
+\end{itemize}
+
+\subsection{Pembahasan Akurasi dan False Positive}
+
+\begin{itemize}
+	\item Pencocokan eksak (KMP, Boyer-Moore, Aho-Corasick, Rabin-Karp)
+	menunjukkan hasil konsisten pada keyword yang benar, terutama pada TC-01
+	(8 match) dan TC-06 (14--15 match).
+	\item RegEx efektif menangkap pola \texttt{<kata><angka>} pada TC-02 dan
+	TC-03, namun menghasilkan false positive pada TC-04 (contoh token umum
+	\texttt{AB1}, \texttt{A9}, \texttt{Rp33}, \texttt{Rp32}). Hal ini wajar
+	karena pola RegEx belum mempertimbangkan konteks semantik.
+	\item Weighted Levenshtein berhasil menemukan variasi visual (TC-03),
+	namun biaya komputasinya tinggi. Threshold default 0.78 cukup sensitif
+	untuk variasi karakter, tetapi perlu dikontrol agar tidak memicu terlalu
+	banyak kandidat pada halaman besar.
+\end{itemize}
+
+\subsection{Ringkasan Analisis}
+
+Secara keseluruhan, pipeline mampu mendeteksi keyword dan pola judol pada
+beragam halaman, dengan RegEx dan algoritma exact matching sebagai komponen
+tercepat dan paling stabil. Weighted Levenshtein terbukti penting untuk
+variasi visual, tetapi perlu digunakan selektif agar performa tetap baik.
+Untuk mengurangi false positive, pola RegEx sebaiknya ditambah filter
+berdasarkan prefix umum atau konteks kata kunci sekitar.
+Keunggulan utama RegEx adalah kecepatan, sementara kelemahannya ada pada
+akurasi konteks. KMP dan Boyer-Moore unggul untuk pencocokan eksak dengan
+overhead rendah, namun skalanya terbatas saat keyword banyak. Aho-Corasick
+memberi keuntungan ketika keyword banyak, tetapi membutuhkan preprocessing
+lebih berat. Rabin-Karp efektif untuk pemeriksaan berbasis hash, tetapi
+masih memerlukan verifikasi agar aman dari collision. Weighted Levenshtein
+memberi fleksibilitas terhadap variasi visual, tetapi menjadi bottleneck
+performa tanpa pembatasan kandidat.
